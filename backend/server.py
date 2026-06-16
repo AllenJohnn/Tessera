@@ -5,13 +5,6 @@ import threading
 import random
 from flask import Flask, render_template, request, jsonify
 from werkzeug.utils import secure_filename
-import pyperclip
-import qrcode
-
-from discovery import UDPDiscoveryEngine
-from transfer_engine import TesseraTransferEngine
-from sync_watcher import start_folder_sync_watcher
-from state_store import TesseraStateStore
 
 # Dynamic absolute directory paths for cloud-hosting execution stability
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -24,213 +17,141 @@ app = Flask(__name__,
             static_folder=STATIC_DIR)
 
 app.config['UPLOAD_FOLDER'] = DROP_ZONE
-app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024
+app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # Capped at 100MB to prevent cloud memory exhaustion crashes
 
 os.makedirs(DROP_ZONE, exist_ok=True)
 
-discovery_node = None
-transfer_node = None
-sync_observer = None
-db_store = None 
+# SECURITY ENHANCEMENT: Restrict execution surface by whitelisting safe media/doc types
+ALLOWED_EXTENSIONS = {'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'zip', 'rar', 'mp4', 'mp3', 'json', 'apk'}
 
-# Dynamic registry tracking web/mobile sessions
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
 HTTP_ACTIVE_DEVICES = {}
 
-# Central memory cache for headless environment clips
-WEB_CLIPBOARD_CACHE = {"content": "", "sender": "SYSTEM", "timestamp": 0}
+WEB_CLIPBOARD_SLOTS = {
+    "SLOT_01": {"content": "", "sender": "SYSTEM", "timestamp": 0},
+    "SLOT_02": {"content": "", "sender": "SYSTEM", "timestamp": 0},
+    "SLOT_03": {"content": "", "sender": "SYSTEM", "timestamp": 0}
+}
 
-# Curated prefix list for generating frictionless, brutalist fallbacks
 BRUTALIST_PREFIXES = ["CORE", "NODE", "SATELLITE", "PHANTOM", "MATRIX", "VECTOR", "ALPHA", "SPECTRE"]
 
-def get_local_ip():
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        s.connect(('8.8.8.8', 1))
-        local_ip = s.getsockname()[0]
-    except Exception:
-        local_ip = '127.0.0.1'
-    finally:
-        s.close()
-    return local_ip
+def run_storage_lifecycle_guard():
+    while True:
+        try:
+            now = time.time()
+            if os.path.exists(DROP_ZONE):
+                for f in os.listdir(DROP_ZONE):
+                    file_path = os.path.join(DROP_ZONE, f)
+                    if os.path.isfile(file_path):
+                        if (now - os.path.getmtime(file_path)) > 1800:
+                            os.remove(file_path)
+                            print(f"🗑️ [Memory Guard] Auto-purged: {f}")
+        except Exception as e:
+            print(f"❌ [Guard Error]: {e}")
+        time.sleep(60)
 
-def generate_terminal_qr(url):
-    qr = qrcode.QRCode(version=1, box_size=1, border=1)
-    qr.add_data(url)
-    qr.make(fit=True)
-    qr.print_ascii(invert=True)
+threading.Thread(target=run_storage_lifecycle_guard, daemon=True).start()
 
 @app.route('/')
 def index():
-    cache_buster = str(int(time.time()))
-    return render_template('index.html', version=cache_buster)
+    return render_template('index.html', version=str(int(time.time())))
 
 @app.route('/api/ping', methods=['POST'])
 def register_device_ping():
     data = request.get_json() or {}
     user_agent = request.headers.get('User-Agent', '').lower()
-    
-    # Extract the true external client IP behind the cloud proxy layer
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
     
     assigned_hostname = data.get("hostname")
+    if assigned_hostname:
+        # SECURITY ENHANCEMENT: Sanitize the callsign to prevent header/UI manipulation strings
+        assigned_hostname = "".join(c for c in str(assigned_hostname) if c.isalnum() or c in '-_')[:15]
+        
     if not assigned_hostname:
         if client_ip in HTTP_ACTIVE_DEVICES:
             assigned_hostname = HTTP_ACTIVE_DEVICES[client_ip]["hostname"]
         else:
-            random_id = random.randint(100, 999)
-            random_prefix = random.choice(BRUTALIST_PREFIXES)
-            assigned_hostname = f"{random_prefix}_{random_id}"
+            assigned_hostname = f"{random.choice(BRUTALIST_PREFIXES)}_{random.randint(100, 999)}"
     
-    if "iphone" in user_agent or "android" in user_agent:
-        device_type = "Mobile Device"
-    elif "ipad" in user_agent:
-        device_type = "Tablet Client"
-    else:
-        device_type = "Web Workstation"
-        
-    HTTP_ACTIVE_DEVICES[client_ip] = {
-        "hostname": assigned_hostname,
-        "type": device_type,
-        "last_seen": time.time()
-    }
+    device_type = "Mobile Device" if "iphone" in user_agent or "android" in user_agent else "Web Workstation"
+    HTTP_ACTIVE_DEVICES[client_ip] = {"hostname": assigned_hostname, "type": device_type, "last_seen": time.time()}
     
     return jsonify({
         "status": "acknowledged", 
         "assigned_name": assigned_hostname,
-        "active_nodes": [
-            {"name": dev["hostname"], "type": dev["type"]} 
-            for dev in HTTP_ACTIVE_DEVICES.values() 
-            if time.time() - dev["last_seen"] < 12
-        ]
+        "active_nodes": [{"name": dev["hostname"], "type": dev["type"]} for dev in HTTP_ACTIVE_DEVICES.values() if time.time() - dev["last_seen"] < 12]
     })
 
 @app.route('/api/peers', methods=['GET'])
 def get_discovered_peers():
     now = time.time()
     unified_devices = {}
-    
-    if discovery_node:
-        for ip, data in discovery_node.get_active_peers().items():
-            unified_devices[ip] = {
-                "hostname": data.get("hostname", "Unknown PC"),
-                "type": "Desktop Core Node",
-                "last_seen": data.get("last_seen", now)
-            }
-            
     for ip, data in list(HTTP_ACTIVE_DEVICES.items()):
         if now - data["last_seen"] < 12:
-            if ip not in unified_devices:
-                unified_devices[ip] = {
-                    "hostname": data["hostname"],
-                    "type": data["type"],
-                    "last_seen": data["last_seen"]
-                }
+            unified_devices[ip] = {"hostname": data["hostname"], "type": data["type"], "last_seen": data["last_seen"]}
         else:
             HTTP_ACTIVE_DEVICES.pop(ip, None)
-            
     return jsonify(unified_devices)
 
 @app.route('/api/clipboard', methods=['POST'])
 def update_clipboard():
-    global WEB_CLIPBOARD_CACHE
     data = request.get_json()
     if not data or 'content' not in data:
-        return jsonify({'error': 'No text content detected'}), 400
+        return jsonify({'error': 'No content'}), 400
         
-    text_content = data['content']
-    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
-    
-    device_info = HTTP_ACTIVE_DEVICES.get(client_ip, {})
-    sender_name = device_info.get('hostname', f"NODE_{client_ip.split('.')[-1]}")
-    
-    WEB_CLIPBOARD_CACHE = {
-        "content": text_content,
-        "sender": sender_name,
-        "timestamp": time.time()
-    }
-    
-    try:
-        pyperclip.copy(text_content)
-        try:
-            import win32clipboard
-            win32clipboard.OpenClipboard()
-            win32clipboard.EmptyClipboard()
-            win32clipboard.SetClipboardText(text_content, win32clipboard.CF_UNICODETEXT)
-            win32clipboard.CloseClipboard()
-        except ImportError:
-            pass
-        print(f"\n📋 [Clipboard] Direct hardware sync completed from node: {sender_name}")
-    except Exception:
-        print(f"\n☁️ [Cloud Clipboard] Text cached successfully from: {sender_name}")
+    slot = data.get('slot', 'SLOT_01')
+    if slot not in WEB_CLIPBOARD_SLOTS: slot = 'SLOT_01'
 
-    return jsonify({'status': 'success', 'message': 'Clipboard Updated!'})
+    # SECURITY ENHANCEMENT: Cap text data packets at 50,000 characters to block buffer overflow spam
+    text_content = str(data['content'])[:50000]
+    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
+    sender_name = HTTP_ACTIVE_DEVICES.get(client_ip, {}).get('hostname', "EXTERNAL_NODE")
+    
+    WEB_CLIPBOARD_SLOTS[slot] = {"content": text_content, "sender": sender_name, "timestamp": time.time()}
+    return jsonify({'status': 'success', 'message': f'Channel {slot} synchronized.'})
 
 @app.route('/api/clipboard/get', methods=['GET'])
 def get_cached_clipboard():
-    global WEB_CLIPBOARD_CACHE
-    return jsonify(WEB_CLIPBOARD_CACHE)
-
-@app.route('/api/send_peer', methods=['POST'])
-def send_file_to_peer():
-    global transfer_node
-    data = request.get_json() or {}
-    target_ip = data.get("target_ip")
-    filename = data.get("file_path")
-    
-    if not target_ip or not filename:
-        return jsonify({"status": "error", "message": "Missing arguments"}), 400
-        
-    actual_file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-
-    if target_ip in HTTP_ACTIVE_DEVICES:
-        print(f"ℹ️ [Routing Switch] Target {target_ip} is a browser client. Kept in local web storage.")
-        return jsonify({"status": "success", "message": "File prepared in cloud file ledger."})
-
-    if transfer_node and os.path.exists(actual_file_path):
-        threading.Thread(
-            target=transfer_node.send_file, 
-            args=(target_ip, actual_file_path), 
-            daemon=True
-        ).start()
-        return jsonify({"status": "success", "message": "Socket stream sequence started"})
-        
-    return jsonify({"status": "error", "message": "File missing from host system"}), 404
+    slot = request.args.get('slot', 'SLOT_01')
+    if slot not in WEB_CLIPBOARD_SLOTS: slot = 'SLOT_01'
+    return jsonify(WEB_CLIPBOARD_SLOTS[slot])
 
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file element detected'}), 400
+    if 'file' not in request.files: return jsonify({'error': 'No element'}), 400
     file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'Empty file parameters'}), 400
+    if file.filename == '': return jsonify({'error': 'Empty parameters'}), 400
+    
+    # SECURITY ENHANCEMENT: Enforce extension constraints validation check
+    if not allowed_file(file.filename):
+        return jsonify({'error': 'Execution blocked: File extension type unauthorized.'}), 403
         
     if file:
         client_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
-        device_info = HTTP_ACTIVE_DEVICES.get(client_ip, {})
-        sender_name = device_info.get('hostname', f"NODE_{client_ip.split('.')[-1]}").replace(" ", "_").upper()
+        sender_name = HTTP_ACTIVE_DEVICES.get(client_ip, {}).get('hostname', "NODE").replace(" ", "_").upper()
         
+        # SECURITY ENHANCEMENT: Enforce path sanitation scrubbing to block traversal exploits
         raw_filename = secure_filename(file.filename)
         stamped_filename = f"{sender_name}_{raw_filename}"
         
         file.save(os.path.join(app.config['UPLOAD_FOLDER'], stamped_filename))
-        
-        if db_store:
-            db_store.log_transfer(stamped_filename, 1, 'completed', client_ip)
-            
-        print(f"\n📥 [File Drop] Saved file '{stamped_filename}' from address {client_ip}")
-        return jsonify({'status': 'success', 'message': f"Stored context as {stamped_filename}"})
+        return jsonify({'status': 'success'})
 
 @app.route('/api/files', methods=['GET'])
 def list_stored_files():
     try:
         files = os.listdir(app.config['UPLOAD_FOLDER'])
         file_data = []
+        now = time.time()
         for f in files:
             file_path = os.path.join(app.config['UPLOAD_FOLDER'], f)
             if os.path.isfile(file_path):
+                elapsed = now - os.path.getmtime(file_path)
+                remaining_min = max(0, int((1800 - elapsed) / 60))
                 file_data.append({
-                    "name": f,
-                    "size": f"{round(os.path.getsize(file_path) / (1024*1024), 2)} MB"
+                    "name": f, "size": f"{round(os.path.getsize(file_path) / (1024*1024), 2)} MB", "ttl": f"EXPIRING IN {remaining_min}M"
                 })
         return jsonify(file_data)
     except Exception as e:
@@ -239,46 +160,18 @@ def list_stored_files():
 @app.route('/api/clear_files', methods=['POST'])
 def clear_stored_files():
     try:
-        files = os.listdir(app.config['UPLOAD_FOLDER'])
-        for f in files:
+        for f in os.listdir(app.config['UPLOAD_FOLDER']):
             file_path = os.path.join(app.config['UPLOAD_FOLDER'], f)
-            if os.path.isfile(file_path):
-                os.remove(file_path)
-        print(f"\n🗑️ [Storage Purge] Directory wiped clear by request.")
-        return jsonify({"status": "success", "message": "Storage purged"})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+            if os.path.isfile(file_path): os.remove(file_path)
+        return jsonify({"status": "success"})
+    except Exception as e: return jsonify({'error': str(e)}), 500
 
 @app.route('/storage/<filename>', methods=['GET'])
 def download_file_direct(filename):
+    # SECURITY ENHANCEMENT: Force path compilation targeting inside send_from_directory boundaries
     from flask import send_from_directory
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename, as_attachment=True)
+    clean_filename = secure_filename(filename)
+    return send_from_directory(app.config['UPLOAD_FOLDER'], clean_filename, as_attachment=True)
 
 if __name__ == '__main__':
-    local_ip = get_local_ip()
-    hostname = socket.gethostname()
-    port = 5000
-    server_url = f"http://{local_ip}:{port}"
-    
-    db_store = TesseraStateStore()
-    
-    discovery_node = UDPDiscoveryEngine(local_ip=local_ip, hostname=hostname)
-    discovery_node.start_broadcaster()
-    discovery_node.start_listener()
-    
-    transfer_node = TesseraTransferEngine(local_ip=local_ip)
-    transfer_node.start_receiver_server()
-    
-    sync_observer = start_folder_sync_watcher(local_ip=local_ip)
-    
-    print("\n" + "═"*50)
-    print(f" 🌟 TESSERA INTERFACE HOST: ACTIVE 🌟 ")
-    print("═"*50)
-    print(f"Node Name: {hostname}")
-    print(f"Local IP Address Pointer: {local_ip}")
-    print(f"Scan this target block to access Tessera from mobile:")
-    generate_terminal_qr(server_url)
-    print(f"\nLocal URI string pointer: {server_url}")
-    print("═"*50 + "\n")
-    
-    app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+    app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)

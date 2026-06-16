@@ -7,32 +7,30 @@ document.addEventListener('DOMContentLoaded', () => {
     const progressBar = document.getElementById('progress-bar');
     const progressPercent = document.getElementById('progress-percent');
     const statusText = document.getElementById('status-text');
-    
     const filesList = document.getElementById('files-list');
     const refreshFilesBtn = document.getElementById('refresh-files-btn');
     const clearFilesBtn = document.getElementById('clear-files-btn');
     const peersGrid = document.getElementById('peers-grid');
     const textStreamContainer = document.getElementById('text-stream-container');
-
-    // Element bindings mapping to header station identification labels
     const displayNameField = document.getElementById('display-name');
     const editNameBtn = document.getElementById('edit-name-btn');
-
-    // Multi-device functional interactive nodes
     const clearTextsBtn = document.getElementById('clear-texts-btn');
     const resetInputBtn = document.getElementById('reset-input-btn');
 
-    // Cold-start tracking node
-    const wakeBanner = document.getElementById('wake-banner');
-
     let selectedPeerIp = null;
-    let lastSeenTimestamp = 0; 
-    
-    // Read locally configured custom callsign if it exists in browser memory cache
+    let activeChannelSlot = "SLOT_01";
+    let channelTimestamps = { "SLOT_01": 0, "SLOT_02": 0, "SLOT_03": 0 };
     let sessionCallsign = localStorage.getItem('tessera_callsign') || "";
 
-    // Show wake banner immediately on execution launch to guard cold starts
-    if (wakeBanner) wakeBanner.style.display = 'flex';
+    // SECURITY ENHANCEMENT: Enforce strict HTML entity sanitization context to completely neutralize XSS payloads
+    function escapeHTML(str) {
+        if (!str) return '';
+        return str.replace(/&/g, '&amp;')
+                  .replace(/</g, '&lt;')
+                  .replace(/>/g, '&gt;')
+                  .replace(/"/g, '&quot;')
+                  .replace(/'/g, '&#x27;');
+    }
 
     function showToast(message, isError = false) {
         const toast = document.getElementById('toast');
@@ -40,35 +38,43 @@ document.addEventListener('DOMContentLoaded', () => {
         toast.style.borderColor = isError ? '#551111' : '#2c2c2c';
         toast.style.transform = 'translateY(0)';
         toast.style.opacity = '1';
-        
         setTimeout(() => {
             toast.style.transform = 'translateY(20px)';
             toast.style.opacity = '0';
         }, 3000);
     }
 
-    // Dynamic tactical 800ms border flash animation logic block
     function flashSectionBorder(sectionId) {
         const targetSection = document.getElementById(sectionId);
         if (!targetSection) return;
-
         targetSection.style.transition = 'border-color 800ms cubic-bezier(0.16, 1, 0.3, 1)';
-        targetSection.style.borderColor = '#10b981'; // Neon Green Frame Line
-
-        setTimeout(() => {
-            targetSection.style.borderColor = '#1c1c1c'; // Reset to default wireframe
-        }, 800);
+        targetSection.style.borderColor = '#10b981';
+        setTimeout(() => { targetSection.style.borderColor = '#1c1c1c'; }, 800);
     }
 
-    // Character-based monospace progress string tracking compiler
     function compileBrutalistProgressBar(percent) {
         const totalBlocks = 10;
         const filledCount = Math.round((percent / 100) * totalBlocks);
-        const emptyCount = totalBlocks - filledCount;
-        return `[${'█'.repeat(filledCount)}${'░'.repeat(emptyCount)}]`;
+        return `[${'█'.repeat(filledCount)}${'░'.repeat(totalBlocks - filledCount)}]`;
     }
 
-    // Ping background server registry
+    document.querySelectorAll('.slot-toggle-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('.slot-toggle-btn').forEach(b => {
+                b.classList.remove('border-white', 'text-white', 'bg-neutral-900');
+                b.classList.add('border-neutral-900', 'text-neutral-600');
+            });
+            this.classList.remove('border-neutral-900', 'text-neutral-600');
+            this.classList.add('border-white', 'text-white', 'bg-neutral-900');
+            
+            activeChannelSlot = this.getAttribute('data-slot');
+            showToast(`channel focus: ${activeChannelSlot}`);
+            textStreamContainer.innerHTML = `<p class="text-[10px] text-neutral-600 uppercase tracking-wider py-1 mono empty-stream-msg">Synchronizing channel logs...</p>`;
+            channelTimestamps[activeChannelSlot] = 0; 
+            checkIncomingTextStreams();
+        });
+    });
+
     async function broadcastMobilePresence() {
         try {
             const response = await fetch('/api/ping', {
@@ -76,27 +82,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ "hostname": sessionCallsign })
             });
-            
             if (response.ok) {
-                // Drop out the cold start warning notice on first API contact resolution
-                if (wakeBanner) wakeBanner.style.display = 'none';
-
                 const data = await response.json();
                 if (!sessionCallsign && data.assigned_name) {
                     sessionCallsign = data.assigned_name;
                     localStorage.setItem('tessera_callsign', sessionCallsign);
                 }
-                
-                if (displayNameField) {
-                    displayNameField.textContent = sessionCallsign;
-                }
+                if (displayNameField) displayNameField.textContent = escapeHTML(sessionCallsign);
             }
-        } catch (err) {
-            console.error("Presence beacon dropped");
-        }
+        } catch (err) { console.error("Presence fault"); }
     }
 
-    // Pull network map from endpoint cache
     async function queryLiveNetworkPeers() {
         try {
             const response = await fetch('/api/peers');
@@ -105,10 +101,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const peerEntries = Object.entries(peers);
             
             if (peerEntries.length === 0) {
-                peersGrid.innerHTML = `
-                    <div class="col-span-1 sm:col-span-2 border border-[#1c1c1c] p-4 text-center bg-[#070707] w-full">
-                        <p class="text-[10px] text-neutral-600 uppercase tracking-wider mono">WAITING FOR PEER DEVICES...</p>
-                    </div>`;
+                peersGrid.innerHTML = `<div class="col-span-1 sm:col-span-2 border border-neutral-900 p-4 text-center bg-[#070707] w-full"><p class="text-[10px] text-neutral-600 uppercase tracking-wider mono">WAITING FOR PEER DEVICES...</p></div>`;
                 selectedPeerIp = null;
                 return;
             }
@@ -116,24 +109,19 @@ document.addEventListener('DOMContentLoaded', () => {
             peersGrid.innerHTML = peerEntries.map(([ip, data]) => {
                 const isSelected = selectedPeerIp === ip;
                 const isLiveNow = (Date.now() / 1000) - data.last_seen < 12;
-                
-                // Formatted status blocks matching user specifications
-                const nodeLabel = `// ${data.hostname.toUpperCase()}`;
+                const nodeLabel = `// ${escapeHTML(data.hostname).toUpperCase()}`;
                 const statusLabel = isLiveNow ? 'ONLINE' : 'OFFLINE';
                 const statusColor = isLiveNow ? 'text-emerald-400' : 'text-amber-600';
-                const indicatorDot = isLiveNow 
-                    ? `<span class="h-1 w-1 bg-emerald-400 rounded-full shadow-[0_0_8px_#10b981]"></span>`
-                    : `<span class="h-1 w-1 bg-amber-600 rounded-full"></span>`;
+                const indicatorDot = isLiveNow ? `<span class="h-1 w-1 bg-emerald-400 rounded-full shadow-[0_0_8px_#10b981]"></span>` : `<span class="h-1 w-1 bg-amber-600 rounded-full"></span>`;
 
                 return `
-                    <div data-ip="${ip}" class="peer-card border ${isSelected ? 'border-white bg-neutral-900/40' : 'border-[#1c1c1c] bg-[#070707]'} p-3 flex justify-between items-center rounded-none select-none cursor-pointer hover:border-neutral-500 transition duration-100">
+                    <div data-ip="${ip}" class="peer-card border ${isSelected ? 'border-white bg-neutral-900/40' : 'border-neutral-900 bg-[#070707]'} p-3 flex justify-between items-center rounded-none select-none cursor-pointer hover:border-neutral-500 transition duration-100">
                         <span class="text-xs font-medium text-neutral-300 mono tracking-wider">${nodeLabel}</span>
                         <div class="flex items-center gap-2">
                             ${indicatorDot}
                             <span class="text-[9px] font-bold ${statusColor} tracking-widest uppercase mono">${statusLabel}</span>
                         </div>
-                    </div>
-                `;
+                    </div>`;
             }).join('');
 
             document.querySelectorAll('.peer-card').forEach(card => {
@@ -144,12 +132,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     showToast(selectedPeerIp ? `route locked: ${selectedPeerIp}` : 'route: local storage');
                 });
             });
-        } catch (err) {
-            console.error(err);
-        }
+        } catch (err) { console.error(err); }
     }
 
-    // Pull direct local workspace storage indices
     async function loadAvailableFiles() {
         try {
             const response = await fetch('/api/files');
@@ -162,52 +147,50 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             filesList.innerHTML = files.map(file => `
-                <div class="flex items-center justify-between bg-[#070707] p-3 border border-[#1c1c1c] hover:border-neutral-800 transition duration-100">
+                <div class="flex items-center justify-between bg-[#070707] p-3 border border-neutral-900 hover:border-neutral-800 transition duration-100">
                     <div class="truncate max-w-[72%]">
-                        <a href="/storage/${encodeURIComponent(file.name)}" class="text-neutral-300 text-xs truncate font-medium hover:text-white block" download>${file.name}</a>
-                        <p class="text-[10px] text-neutral-600 mono mt-1">${file.size}</p>
+                        <a href="/storage/${encodeURIComponent(file.name)}" class="text-neutral-300 text-xs truncate font-medium hover:text-white block" download>${escapeHTML(file.name)}</a>
+                        <div class="flex items-center gap-3 text-[10px] text-neutral-600 mono mt-1">
+                            <span>${escapeHTML(file.size)}</span>
+                            <span class="text-amber-500/80 font-semibold select-none">${escapeHTML(file.ttl)}</span>
+                        </div>
                     </div>
                     <a href="/storage/${encodeURIComponent(file.name)}" class="text-[9px] font-bold tracking-widest px-2.5 py-1.5 border border-neutral-800 text-neutral-400 hover:border-white hover:text-white transition duration-100 uppercase" download>GET</a>
-                </div>
-            `).join('');
-        } catch (err) {
-            console.error(err);
-        }
+                </div>`).join('');
+        } catch (err) { console.error(err); }
     }
 
-    // Polls the web backend cache for new text payloads
     async function checkIncomingTextStreams() {
         if (!textStreamContainer) return;
         try {
-            const response = await fetch('/api/clipboard/get');
+            const response = await fetch(`/api/clipboard/get?slot=${activeChannelSlot}`);
             if (!response.ok) return;
             const data = await response.json();
 
-            if (data && data.content && data.timestamp > lastSeenTimestamp) {
-                lastSeenTimestamp = data.timestamp;
-
+            if (data && data.content && data.timestamp > channelTimestamps[activeChannelSlot]) {
+                channelTimestamps[activeChannelSlot] = data.timestamp;
                 const emptyMsg = textStreamContainer.querySelector('.empty-stream-msg');
                 if (emptyMsg) emptyMsg.remove();
 
                 const textRow = document.createElement('div');
-                textRow.className = "flex items-center justify-between bg-[#070707] p-3 border border-[#1c1c1c] hover:border-neutral-800 transition duration-100 animate-fade-in";
+                textRow.className = "flex items-center justify-between bg-[#070707] p-3 border border-neutral-900 hover:border-neutral-800 transition duration-100 animate-fade-in";
                 
-                const displayText = data.content.length > 40 ? data.content.substring(0, 40) + "..." : data.content;
-                const senderTag = data.sender ? data.sender.toUpperCase() : "UNKNOWN";
+                // SECURITY ENHANCEMENT: Enforce escaping parameters on dynamic text inserts
+                const sanitizedContent = escapeHTML(data.content);
+                const displayText = sanitizedContent.length > 40 ? sanitizedContent.substring(0, 40) + "..." : sanitizedContent;
+                const senderTag = escapeHTML(data.sender).toUpperCase();
 
                 textRow.innerHTML = `
                     <div class="truncate max-w-[72%]">
                         <p class="text-neutral-300 text-xs font-medium break-all select-all">${displayText}</p>
-                        <p class="text-[9px] text-neutral-500 mono mt-1 uppercase tracking-wide">RECEIVED FROM // ${senderTag}</p>
+                        <p class="text-[9px] text-neutral-500 mono mt-1 uppercase tracking-wide">CH_${activeChannelSlot.split('_')[1]} // FROM // ${senderTag}</p>
                     </div>
-                    <button type="button" class="copy-stream-btn text-[9px] font-bold tracking-widest px-2.5 py-1.5 border border-neutral-800 text-neutral-400 hover:border-white hover:text-white hover:bg-white hover:text-black transition duration-100 uppercase cursor-pointer" data-raw="${encodeURIComponent(data.content)}">COPY</button>
-                `;
+                    <button type="button" class="copy-stream-btn text-[9px] font-bold tracking-widest px-2.5 py-1.5 border border-neutral-800 text-neutral-400 hover:border-white hover:text-white hover:bg-white hover:text-black transition duration-100 uppercase cursor-pointer" data-raw="${encodeURIComponent(data.content)}">COPY</button>`;
 
                 textRow.querySelector('.copy-stream-btn').addEventListener('click', function() {
                     const rawContent = decodeURIComponent(this.getAttribute('data-raw'));
                     navigator.clipboard.writeText(rawContent).then(() => {
                         this.innerText = "COPIED!";
-                        // Trigger border flash feedback routine around the incoming streams card panel frame
                         flashSectionBorder('received-streams-section');
                         setTimeout(() => this.innerText = "COPY", 1500);
                     }).catch(() => showToast('browser copy blocked', true));
@@ -215,36 +198,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 textStreamContainer.insertBefore(textRow, textStreamContainer.firstChild);
                 flashSectionBorder('received-streams-section');
+            } else if (!data.content && textStreamContainer.querySelector('.empty-stream-msg')) {
+                textStreamContainer.innerHTML = `<p class="text-[10px] text-neutral-600 uppercase tracking-wider py-1 mono empty-stream-msg">Channel ${activeChannelSlot.split('_')[1]} buffer stream empty...</p>`;
             }
-        } catch (err) {
-            console.error("Text stream verification exception dropping:", err);
-        }
+        } catch (err) { console.error(err); }
     }
 
-    // Connected inline callsign editing logic prompt controller tracking block
     if (editNameBtn) {
         editNameBtn.addEventListener('click', () => {
             const currentName = sessionCallsign || "ASSIGNING...";
             const inputPrompt = prompt("ENTER NEW STATION CALLSIGN:", currentName);
-            
             if (inputPrompt !== null) {
                 const sanitizedInput = inputPrompt.trim().replace(/[^a-zA-Z0-9-_ ]/g, "").toUpperCase();
                 if (!sanitizedInput) {
-                    showToast('Invalid station identifier matching strings', true);
+                    showToast('Invalid station callsign input', true);
                     return;
                 }
-                
                 sessionCallsign = sanitizedInput;
                 localStorage.setItem('tessera_callsign', sessionCallsign);
-                if (displayNameField) displayNameField.textContent = sessionCallsign;
-                
+                if (displayNameField) displayNameField.textContent = escapeHTML(sessionCallsign);
                 showToast(`callsign assigned: ${sessionCallsign}`);
                 broadcastMobilePresence(); 
             }
         });
     }
 
-    // Clear operation implementation for dynamic text rows
     if (clearTextsBtn) {
         clearTextsBtn.addEventListener('click', () => {
             if (textStreamContainer) {
@@ -254,7 +232,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // One-click fast reset clear utility macro tracking hook inside input elements
     if (resetInputBtn) {
         resetInputBtn.addEventListener('click', () => {
             if (clipboardInput) {
@@ -271,12 +248,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (response.ok) {
                 showToast('storage wiped clean');
                 loadAvailableFiles();
-            } else {
-                showToast('clear execution failed', true);
-            }
-        } catch (err) {
-            showToast('communication exception', true);
-        }
+            } else { showToast('clear execution failed', true); }
+        } catch (err) { showToast('communication exception', true); }
     });
 
     refreshFilesBtn.addEventListener('click', loadAvailableFiles);
@@ -290,32 +263,25 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('/api/clipboard', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ content })
+                body: JSON.stringify({ content, slot: activeChannelSlot })
             });
             if (response.ok) {
                 clipboardInput.value = '';
-                // Flash the target clipboard border module frame container green upon push validation
                 flashSectionBorder('clipboard-sync-section');
                 await checkIncomingTextStreams();
-            } else {
-                showToast('sync channel fault', true);
-            }
-        } catch (err) {
-            showToast('communication error', true);
-        }
+            } else { showToast('sync channel fault', true); }
+        } catch (err) { showToast('communication error', true); }
     });
 
     dropZone.addEventListener('click', () => fileElement.click());
     fileElement.addEventListener('change', () => {
-        if (fileElement.files.length > 0) {
-            handleFileUpload(fileElement.files[0]);
-        }
+        if (fileElement.files.length > 0) { handleFileUpload(fileElement.files[0]); }
     });
 
     function handleFileUpload(file) {
         if (selectedPeerIp) {
             progressContainer.classList.remove('hidden');
-            statusText.textContent = `SENDING DATA CHUNKS OVER RAW SOCKETS...`;
+            statusText.textContent = `SENDING CHUNKS VIA RAW SOCKET PIPELINES...`;
             progressBar.style.width = '100%';
             progressPercent.textContent = 'SOCKET';
 
@@ -329,9 +295,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (data.status === 'success') {
                     flashSectionBorder('file-transfer-section');
                     statusText.textContent = "COMPLETE";
-                } else {
-                    showToast('socket stream aborted', true);
-                }
+                } else { showToast('socket stream aborted', true); }
                 setTimeout(() => progressContainer.classList.add('hidden'), 2000);
                 loadAvailableFiles();
             });
@@ -353,9 +317,7 @@ document.addEventListener('DOMContentLoaded', () => {
         clientRequest.upload.addEventListener('progress', (e) => {
             if (e.lengthComputable) {
                 const percent = Math.round((e.loaded / e.total) * 100);
-                const visualBar = compileBrutalistProgressBar(percent);
-                
-                statusText.textContent = `UPLOADING... ${visualBar}`;
+                statusText.textContent = `UPLOADING... ${compileBrutalistProgressBar(percent)}`;
                 progressBar.style.width = `${percent}%`;
                 progressPercent.textContent = `${percent}%`;
             }
@@ -367,7 +329,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 statusText.textContent = "COMPLETE";
                 loadAvailableFiles();
             } else {
-                showToast('pipeline channel crash', true);
+                const responseData = JSON.parse(clientRequest.responseText || '{}');
+                showToast(responseData.error || 'pipeline channel crash', true);
             }
             setTimeout(() => progressContainer.classList.add('hidden'), 2000);
             fileElement.value = ''; 
@@ -383,6 +346,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         setInterval(broadcastMobilePresence, 4000);
         setInterval(queryLiveNetworkPeers, 4000);
+        setInterval(loadAvailableFiles, 10000);
         setInterval(checkIncomingTextStreams, 2000); 
     }
 

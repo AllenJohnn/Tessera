@@ -22,12 +22,7 @@
 </head>
 <body class="text-white min-h-screen flex flex-col items-center antialiased px-4 py-6 md:p-12 relative overflow-x-hidden grid-bg">
 
-    <div id="wake-banner" class="w-full max-w-5xl border border-amber-500/30 bg-amber-950/20 px-5 py-3 mb-4 text-[10px] mono text-amber-400 uppercase tracking-widest hidden flex items-center gap-2">
-        <span class="h-1.5 w-1.5 bg-amber-400 animate-ping rounded-full"></span>
-        <span>SYSTEM WAKING CONTAINER... EST. 30s (RENDER FREE TIER COLD START)</span>
-    </div>
-
-    <header class="w-full max-w-5xl border border-[#1c1c1c] bg-black/90 backdrop-blur-md p-5 mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shadow-2xl">
+    <header class="w-full max-w-5xl border border-neutral-900 bg-black/90 backdrop-blur-md p-5 mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shadow-2xl">
         <div class="flex items-center gap-3">
             <div class="h-1.5 w-1.5 bg-white animate-pulse"></div>
             <h1 class="text-xs font-semibold tracking-widest uppercase mono">tessera</h1>
@@ -46,25 +41,33 @@
         
         <div class="lg:col-span-2 space-y-6">
             
-            <section id="devices-section" class="border border-[#1c1c1c] p-5 bg-black/95 shadow-xl">
+            <section id="devices-section" class="border border-neutral-900 p-5 bg-black/95 shadow-xl">
                 <h2 class="text-[11px] font-medium uppercase tracking-widest text-neutral-400 mb-4 mono">// CONNECTED DEVICES</h2>
                 <div id="peers-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-2 min-h-[50px]">
                     <p class="text-xs text-neutral-600 uppercase tracking-wider mono py-1" id="peers-fallback">WAITING FOR PEER DEVICES...</p>
                 </div>
             </section>
             
-            <section id="clipboard-sync-section" class="border border-[#1c1c1c] p-5 bg-black/95 shadow-xl relative">
-                <div class="flex justify-between items-baseline mb-3">
+            <section id="clipboard-sync-section" class="border border-neutral-900 p-5 bg-black/95 shadow-xl relative">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 border-b border-neutral-900 pb-3">
                     <h2 class="text-[11px] font-medium uppercase tracking-widest text-neutral-400 mono">// CLIPBOARD SYNC</h2>
-                    <button type="button" id="reset-input-btn" class="text-[9px] mono text-neutral-600 hover:text-neutral-300 transition uppercase tracking-widest cursor-pointer font-medium select-none">[RESET]</button>
+                    <div class="flex items-center gap-1 mono text-[9px] font-bold tracking-widest select-none">
+                        <span class="text-neutral-600 mr-1 uppercase">ROUTE CHANNEL:</span>
+                        <button type="button" data-slot="SLOT_01" class="slot-toggle-btn px-2 py-1 border border-white text-white bg-neutral-900 transition cursor-pointer">[01]</button>
+                        <button type="button" data-slot="SLOT_02" class="slot-toggle-btn px-2 py-1 border border-neutral-900 text-neutral-600 transition cursor-pointer">[02]</button>
+                        <button type="button" data-slot="SLOT_03" class="slot-toggle-btn px-2 py-1 border border-neutral-900 text-neutral-600 transition cursor-pointer">[03]</button>
+                    </div>
                 </div>
-                <textarea id="clipboard-input" rows="3" class="w-full p-4 bg-[#0a0a0a] border border-[#1c1c1c] focus:border-neutral-500 rounded-none focus:outline-none text-xs text-neutral-300 placeholder-neutral-700 mono resize-none transition-colors duration-150 focus:ring-0" placeholder="Paste data here..."></textarea>
-                <button type="button" id="sync-text-btn" class="w-full mt-3 bg-white hover:bg-neutral-200 active:bg-neutral-300 text-black font-semibold py-3.5 px-4 text-[10px] mono transition duration-100 rounded-none uppercase tracking-widest cursor-pointer">
-                    push text
-                </button>
+                <textarea id="clipboard-input" rows="3" class="w-full p-4 bg-[#0a0a0a] border border-neutral-900 focus:border-neutral-500 rounded-none focus:outline-none text-xs text-neutral-300 placeholder-neutral-700 mono resize-none transition-colors duration-150 focus:ring-0" placeholder="Paste data here..."></textarea>
+                <div class="flex items-center gap-2 mt-3">
+                    <button type="button" id="sync-text-btn" class="flex-1 bg-white hover:bg-neutral-200 active:bg-neutral-300 text-black font-semibold py-3.5 px-4 text-[10px] mono transition duration-100 rounded-none uppercase tracking-widest cursor-pointer">
+                        push text
+                    </button>
+                    <button type="button" id="reset-input-btn" class="h-full border border-neutral-900 hover:border-neutral-500 px-4 text-[9px] mono text-neutral-500 hover:text-white transition uppercase tracking-widest cursor-pointer font-medium select-none">[RESET]</button>
+                </div>
             </section>
 
-            <section id="received-streams-section" class="border border-[#1c1c1c] p-5 bg-black/95 shadow-xl">
+            <section id="received-streams-section" class="border border-neutral-900 p-5 bg-black/95 shadow-xl">
                 <div class="flex justify-between items-baseline mb-3">
                     <h2 class="text-[11px] font-medium uppercase tracking-widest text-neutral-400 mono">// RECEIVED TEXT STREAMS</h2>
                     <button type="button" id="clear-texts-btn" class="text-[9px] mono text-neutral-600 hover:text-rose-400 transition uppercase tracking-widest cursor-pointer font-medium select-none">clear</button>
@@ -74,14 +77,14 @@
                 </div>
             </section>
 
-            <section id="file-transfer-section" class="border border-[#1c1c1c] p-5 bg-black/95 shadow-xl">
+            <section id="file-transfer-section" class="border border-neutral-900 p-5 bg-black/95 shadow-xl">
                 <h2 class="text-[11px] font-medium uppercase tracking-widest text-neutral-400 mb-3 mono">// FILE TRANSFER</h2>
-                <div id="drop-zone" class="border border-dashed border-[#2c2c2c] hover:border-neutral-500 p-10 text-center cursor-pointer bg-[#070707] transition duration-150 flex flex-col items-center justify-center min-h-[140px] hover:bg-[#0c0c0c]">
+                <div id="drop-zone" class="border border-dashed border-neutral-800 hover:border-neutral-500 p-10 text-center cursor-pointer bg-[#070707] transition duration-150 flex flex-col items-center justify-center min-h-[140px] hover:bg-[#0c0c0c]">
                     <input type="file" id="file-element" class="hidden">
                     <p class="text-xs text-neutral-300 mono tracking-widest font-medium">SELECT FILE SOURCE</p>
                 </div>
                 
-                <div id="progress-container" class="mt-4 hidden bg-[#0a0a0a] border border-[#1c1c1c] p-3.5">
+                <div id="progress-container" class="mt-4 hidden bg-[#0a0a0a] border border-neutral-900 p-3.5">
                     <div class="flex justify-between text-[10px] mono mb-2">
                         <span id="status-text" class="text-neutral-500 uppercase tracking-wider">UPLOADING... [░░░░░░░░░░]</span>
                         <span id="progress-percent" class="text-white font-bold">0%</span>
@@ -94,8 +97,8 @@
         </div>
 
         <div class="lg:col-span-1 w-full">
-            <section id="history-section" class="border border-[#1c1c1c] p-5 bg-black/95 shadow-xl flex flex-col min-h-[350px] lg:min-h-[515px]">
-                <div class="flex justify-between items-baseline mb-4 pb-2 border-b border-[#1c1c1c]">
+            <section id="history-section" class="border border-neutral-900 p-5 bg-black/95 shadow-xl flex flex-col min-h-[350px] lg:min-h-[515px]">
+                <div class="flex justify-between items-baseline mb-4 pb-2 border-b border-neutral-900">
                     <h2 class="text-[11px] font-medium uppercase tracking-widest text-neutral-400 mono">// HISTORY</h2>
                     <div class="flex gap-3">
                         <button type="button" id="clear-files-btn" class="text-[9px] mono text-neutral-600 hover:text-rose-400 transition uppercase tracking-widest cursor-pointer font-medium">clear</button>
@@ -110,7 +113,7 @@
 
     </main>
 
-    <div id="toast" class="fixed bottom-6 text-[10px] mono uppercase tracking-widest font-medium px-5 py-3 bg-neutral-900 border border-[#2c2c2c] text-white shadow-2xl translate-y-20 opacity-0 transition-all duration-200 z-50"></div>
+    <div id="toast" class="fixed bottom-6 text-[10px] mono uppercase tracking-widest font-medium px-5 py-3 bg-neutral-900 border border-neutral-800 text-white shadow-2xl translate-y-20 opacity-0 transition-all duration-200 z-50"></div>
 
     <script src="/static/js/main.js?v={{ version }}"></script>
 </body>
