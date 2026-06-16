@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tessera Hub</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col items-center p-4">
+    
+    <header class="w-full max-w-md my-6 text-center">
+        <h1 class="text-3xl font-extrabold text-blue-400 tracking-tight">Tessera</h1>
+        <p class="text-xs text-slate-400 mt-1">Zero-Config Local Relay Node</p>
+    </header>
+
+    <main class="w-full max-w-md space-y-6">
+        
+        <!-- Clipboard Entry Module -->
+        <section class="bg-slate-800 p-5 rounded-2xl shadow-xl border border-slate-700/50">
+            <h2 class="text-lg font-bold text-slate-200 mb-3 flex items-center gap-2">
+                📋 Sync Clipboard to Host PC
+            </h2>
+            <textarea id="clipboard-input" rows="3" class="w-full p-3 bg-slate-900 border border-slate-700 rounded-xl focus:outline-none focus:border-blue-500 text-sm resize-none text-slate-200 placeholder-slate-500" placeholder="Paste a link, string, or text chunk block..."></textarea>
+            <button id="sync-text-btn" class="w-full mt-3 bg-blue-600 hover:bg-blue-500 text-white font-medium py-2.5 px-4 rounded-xl transition duration-200 text-sm">
+                Commit to PC Clipboard
+            </button>
+        </section>
+
+        <!-- Binary Transfer Pipeline Dropzone -->
+        <section class="bg-slate-800 p-5 rounded-2xl shadow-xl border border-slate-700/50">
+            <h2 class="text-lg font-bold text-slate-200 mb-3">
+                📁 Structural File Drop
+            </h2>
+            <div id="drop-zone" class="border-2 border-dashed border-slate-600 hover:border-blue-500 rounded-xl p-8 text-center cursor-pointer bg-slate-900/50 transition duration-200">
+                <input type="file" id="file-element" class="hidden">
+                <p class="text-sm text-slate-300 font-medium">Click / Tap to pick file source</p>
+                <p class="text-xs text-slate-500 mt-1">Files land in designated storage repository</p>
+            </div>
+            
+            <!-- Ingestion Progress Elements -->
+            <div id="progress-container" class="mt-4 hidden">
+                <div class="flex justify-between text-xs mb-1">
+                    <span id="status-text" class="text-blue-400 font-medium">Uploading...</span>
+                    <span id="progress-percent" class="text-slate-400">0%</span>
+                </div>
+                <div class="w-full bg-slate-700 h-2 rounded-full overflow-hidden">
+                    <div id="progress-bar" class="bg-blue-500 h-full w-0 transition-all duration-150"></div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <div id="toast" class="fixed bottom-5 bg-emerald-600 text-white font-medium text-sm px-6 py-3 rounded-xl shadow-2xl translate-y-20 opacity-0 transition-all duration-300"></div>
+
+    <script src="/static/js/main.js"></script>
+</body>
+</html>
