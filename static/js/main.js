@@ -7,6 +7,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const progressBar = document.getElementById('progress-bar');
     const progressPercent = document.getElementById('progress-percent');
     const statusText = document.getElementById('status-text');
+    
+    // History UI hooks
+    const historyList = document.getElementById('history-list');
+    const refreshHistoryBtn = document.getElementById('refresh-history-btn');
 
     function showToast(message, isError = false) {
         const toast = document.getElementById('toast');
@@ -20,6 +24,37 @@ document.addEventListener('DOMContentLoaded', () => {
             toast.style.opacity = '0';
         }, 3000);
     }
+
+    // NEW FEATURE: Fetch and build the transfer history logs from SQLite
+    async function loadTransferHistory() {
+        try {
+            const response = await fetch('/api/history');
+            if (!response.ok) return;
+            const history = await response.json();
+            
+            if (history.length === 0) {
+                historyList.innerHTML = `<p class="text-xs text-slate-500 italic">No transfers logged yet.</p>`;
+                return;
+            }
+
+            historyList.innerHTML = history.map(item => `
+                <div class="flex justify-between items-center bg-slate-900/60 p-2.5 rounded-xl border border-slate-700/30">
+                    <div class="truncate max-w-[70%]">
+                        <p class="text-slate-200 font-medium text-xs truncate">${item.filename}</p>
+                        <p class="text-[10px] text-slate-500">${item.peer_ip}</p>
+                    </div>
+                    <span class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-md ${
+                        item.status === 'completed' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'
+                    }">${item.status}</span>
+                </div>
+            `).join('');
+        } catch (err) {
+            console.error('Failed to load history metrics:', err);
+        }
+    }
+
+    // Attach load listener to refresh button
+    refreshHistoryBtn.addEventListener('click', loadTransferHistory);
 
     // Process Text Commit Actions
     syncTextBtn.addEventListener('click', async () => {
@@ -77,6 +112,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 const res = JSON.parse(xhr.responseText);
                 showToast(res.message || 'Stream block finalized!');
                 statusText.textContent = "Success!";
+                // Reload dashboard logs on file upload completion event
+                loadTransferHistory();
             } else {
                 const err = JSON.parse(xhr.responseText);
                 showToast(err.error || 'Stream execution interrupted', true);
@@ -93,4 +130,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         xhr.send(formData);
     }
+
+    // Initial load call execution on application boot
+    loadTransferHistory();
 });
