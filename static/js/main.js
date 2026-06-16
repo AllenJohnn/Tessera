@@ -18,15 +18,21 @@ document.addEventListener('DOMContentLoaded', () => {
     const displayNameField = document.getElementById('display-name');
     const editNameBtn = document.getElementById('edit-name-btn');
 
-    // NEW ELEMENT BINDINGS: Multi-device functional interactive nodes
+    // Multi-device functional interactive nodes
     const clearTextsBtn = document.getElementById('clear-texts-btn');
     const resetInputBtn = document.getElementById('reset-input-btn');
+
+    // Cold-start tracking node
+    const wakeBanner = document.getElementById('wake-banner');
 
     let selectedPeerIp = null;
     let lastSeenTimestamp = 0; 
     
     // Read locally configured custom callsign if it exists in browser memory cache
     let sessionCallsign = localStorage.getItem('tessera_callsign') || "";
+
+    // Show wake banner immediately on execution launch to guard cold starts
+    if (wakeBanner) wakeBanner.style.display = 'flex';
 
     function showToast(message, isError = false) {
         const toast = document.getElementById('toast');
@@ -41,6 +47,27 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 3000);
     }
 
+    // Dynamic tactical 800ms border flash animation logic block
+    function flashSectionBorder(sectionId) {
+        const targetSection = document.getElementById(sectionId);
+        if (!targetSection) return;
+
+        targetSection.style.transition = 'border-color 800ms cubic-bezier(0.16, 1, 0.3, 1)';
+        targetSection.style.borderColor = '#10b981'; // Neon Green Frame Line
+
+        setTimeout(() => {
+            targetSection.style.borderColor = '#1c1c1c'; // Reset to default wireframe
+        }, 800);
+    }
+
+    // Character-based monospace progress string tracking compiler
+    function compileBrutalistProgressBar(percent) {
+        const totalBlocks = 10;
+        const filledCount = Math.round((percent / 100) * totalBlocks);
+        const emptyCount = totalBlocks - filledCount;
+        return `[${'█'.repeat(filledCount)}${'░'.repeat(emptyCount)}]`;
+    }
+
     // Ping background server registry
     async function broadcastMobilePresence() {
         try {
@@ -51,6 +78,9 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             
             if (response.ok) {
+                // Drop out the cold start warning notice on first API contact resolution
+                if (wakeBanner) wakeBanner.style.display = 'none';
+
                 const data = await response.json();
                 if (!sessionCallsign && data.assigned_name) {
                     sessionCallsign = data.assigned_name;
@@ -76,8 +106,8 @@ document.addEventListener('DOMContentLoaded', () => {
             
             if (peerEntries.length === 0) {
                 peersGrid.innerHTML = `
-                    <div class="col-span-2 border border-[#1c1c1c] p-4 text-center bg-[#070707] w-full">
-                        <p class="text-[10px] text-neutral-600 italic mono uppercase tracking-wider">NO DEVICES DETECTED</p>
+                    <div class="col-span-1 sm:col-span-2 border border-[#1c1c1c] p-4 text-center bg-[#070707] w-full">
+                        <p class="text-[10px] text-neutral-600 uppercase tracking-wider mono">WAITING FOR PEER DEVICES...</p>
                     </div>`;
                 selectedPeerIp = null;
                 return;
@@ -85,22 +115,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
             peersGrid.innerHTML = peerEntries.map(([ip, data]) => {
                 const isSelected = selectedPeerIp === ip;
-                
-                // FIXED: Check heartbeats dynamically to render green pulse dots for active sessions
                 const isLiveNow = (Date.now() / 1000) - data.last_seen < 12;
+                
+                // Formatted status blocks matching user specifications
+                const nodeLabel = `// ${data.hostname.toUpperCase()}`;
+                const statusLabel = isLiveNow ? 'ONLINE' : 'OFFLINE';
+                const statusColor = isLiveNow ? 'text-emerald-400' : 'text-amber-600';
                 const indicatorDot = isLiveNow 
-                    ? `<div class="h-2 w-2 rounded-full bg-emerald-500 animate-pulse shrink-0 ml-3"></div>`
-                    : `<div class="h-2 w-2 rounded-full bg-amber-600 shrink-0 ml-3"></div>`;
+                    ? `<span class="h-1 w-1 bg-emerald-400 rounded-full shadow-[0_0_8px_#10b981]"></span>`
+                    : `<span class="h-1 w-1 bg-amber-600 rounded-full"></span>`;
 
                 return `
-                    <div data-ip="${ip}" class="peer-card border ${isSelected ? 'border-white bg-neutral-900/40' : 'border-[#1c1c1c] bg-[#070707]'} p-3.5 cursor-pointer hover:border-neutral-500 transition duration-100 flex items-center justify-between">
-                        <div class="truncate">
-                            <p class="text-xs font-semibold tracking-tight truncate ${isSelected ? 'text-white' : 'text-neutral-400'}">${data.hostname}</p>
-                            <p class="text-[10px] text-neutral-600 mono mt-1">${ip} // ${data.type.toUpperCase()}</p>
-                        </div>
+                    <div data-ip="${ip}" class="peer-card border ${isSelected ? 'border-white bg-neutral-900/40' : 'border-[#1c1c1c] bg-[#070707]'} p-3 flex justify-between items-center rounded-none select-none cursor-pointer hover:border-neutral-500 transition duration-100">
+                        <span class="text-xs font-medium text-neutral-300 mono tracking-wider">${nodeLabel}</span>
                         <div class="flex items-center gap-2">
-                            <div class="h-2 w-2 rounded-none border ${isSelected ? 'bg-white border-white' : 'border-neutral-800'} shrink-0"></div>
                             ${indicatorDot}
+                            <span class="text-[9px] font-bold ${statusColor} tracking-widest uppercase mono">${statusLabel}</span>
                         </div>
                     </div>
                 `;
@@ -127,7 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const files = await response.json();
             
             if (files.length === 0) {
-                filesList.innerHTML = `<p class="text-[10px] text-neutral-600 italic py-3 uppercase tracking-wider">HISTORY EMPTY</p>`;
+                filesList.innerHTML = `<p class="text-[10px] text-neutral-600 uppercase tracking-wider py-1" id="history-fallback">NO TRANSFERS TRACKED YET</p>`;
                 return;
             }
 
@@ -177,19 +207,21 @@ document.addEventListener('DOMContentLoaded', () => {
                     const rawContent = decodeURIComponent(this.getAttribute('data-raw'));
                     navigator.clipboard.writeText(rawContent).then(() => {
                         this.innerText = "COPIED!";
+                        // Trigger border flash feedback routine around the incoming streams card panel frame
+                        flashSectionBorder('received-streams-section');
                         setTimeout(() => this.innerText = "COPY", 1500);
                     }).catch(() => showToast('browser copy blocked', true));
                 });
 
                 textStreamContainer.insertBefore(textRow, textStreamContainer.firstChild);
-                showToast(`text message streaming from ${senderTag}`);
+                flashSectionBorder('received-streams-section');
             }
         } catch (err) {
             console.error("Text stream verification exception dropping:", err);
         }
     }
 
-    // FIXED: Connected inline callsign editing logic prompt controller tracking block
+    // Connected inline callsign editing logic prompt controller tracking block
     if (editNameBtn) {
         editNameBtn.addEventListener('click', () => {
             const currentName = sessionCallsign || "ASSIGNING...";
@@ -212,17 +244,17 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // FIXED: Clear operation implementation for dynamic text rows
+    // Clear operation implementation for dynamic text rows
     if (clearTextsBtn) {
         clearTextsBtn.addEventListener('click', () => {
             if (textStreamContainer) {
-                textStreamContainer.innerHTML = `<p class="text-[10px] text-neutral-600 italic py-1 mono empty-stream-msg">No incoming text logs tracked...</p>`;
+                textStreamContainer.innerHTML = `<p class="text-[10px] text-neutral-600 uppercase tracking-wider py-1 mono empty-stream-msg">No incoming text logs tracked...</p>`;
                 showToast('text feed cleared');
             }
         });
     }
 
-    // FIXED: One-click fast reset clear utility macro macro tracking hook inside input elements
+    // One-click fast reset clear utility macro tracking hook inside input elements
     if (resetInputBtn) {
         resetInputBtn.addEventListener('click', () => {
             if (clipboardInput) {
@@ -261,8 +293,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify({ content })
             });
             if (response.ok) {
-                showToast('clipboard updated');
                 clipboardInput.value = '';
+                // Flash the target clipboard border module frame container green upon push validation
+                flashSectionBorder('clipboard-sync-section');
                 await checkIncomingTextStreams();
             } else {
                 showToast('sync channel fault', true);
@@ -294,7 +327,7 @@ document.addEventListener('DOMContentLoaded', () => {
             .then(res => res.json())
             .then(data => {
                 if (data.status === 'success') {
-                    showToast('socket operation successful');
+                    flashSectionBorder('file-transfer-section');
                     statusText.textContent = "COMPLETE";
                 } else {
                     showToast('socket stream aborted', true);
@@ -310,7 +343,7 @@ document.addEventListener('DOMContentLoaded', () => {
         formData.append('file', file);
 
         progressContainer.classList.remove('hidden');
-        statusText.textContent = "UPLOADING FILE BLOCKS TO SYSTEM DISK...";
+        statusText.textContent = "UPLOADING... [░░░░░░░░░░]";
         progressBar.style.width = '0%';
         progressPercent.textContent = '0%';
 
@@ -320,6 +353,9 @@ document.addEventListener('DOMContentLoaded', () => {
         clientRequest.upload.addEventListener('progress', (e) => {
             if (e.lengthComputable) {
                 const percent = Math.round((e.loaded / e.total) * 100);
+                const visualBar = compileBrutalistProgressBar(percent);
+                
+                statusText.textContent = `UPLOADING... ${visualBar}`;
                 progressBar.style.width = `${percent}%`;
                 progressPercent.textContent = `${percent}%`;
             }
@@ -327,7 +363,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         clientRequest.onload = () => {
             if (clientRequest.status === 200) {
-                showToast('transfer complete');
+                flashSectionBorder('file-transfer-section');
                 statusText.textContent = "COMPLETE";
                 loadAvailableFiles();
             } else {

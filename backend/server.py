@@ -79,7 +79,7 @@ def register_device_ping():
         else:
             random_id = random.randint(100, 999)
             random_prefix = random.choice(BRUTALIST_PREFIXES)
-            assigned_hostname = f"{random_prefix}-{random_id}"
+            assigned_hostname = f"{random_prefix}_{random_id}"
     
     if "iphone" in user_agent or "android" in user_agent:
         device_type = "Mobile Device"
@@ -94,7 +94,15 @@ def register_device_ping():
         "last_seen": time.time()
     }
     
-    return jsonify({"status": "acknowledged", "assigned_name": assigned_hostname})
+    return jsonify({
+        "status": "acknowledged", 
+        "assigned_name": assigned_hostname,
+        "active_nodes": [
+            {"name": dev["hostname"], "type": dev["type"]} 
+            for dev in HTTP_ACTIVE_DEVICES.values() 
+            if time.time() - dev["last_seen"] < 12
+        ]
+    })
 
 @app.route('/api/peers', methods=['GET'])
 def get_discovered_peers():
@@ -112,7 +120,6 @@ def get_discovered_peers():
     for ip, data in list(HTTP_ACTIVE_DEVICES.items()):
         if now - data["last_seen"] < 12:
             if ip not in unified_devices:
-                # FIXED: Added the explicit last_seen dictionary passing map layer
                 unified_devices[ip] = {
                     "hostname": data["hostname"],
                     "type": data["type"],
@@ -134,7 +141,7 @@ def update_clipboard():
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
     
     device_info = HTTP_ACTIVE_DEVICES.get(client_ip, {})
-    sender_name = device_info.get('hostname', f"NODE [{client_ip.split('.')[-1]}]")
+    sender_name = device_info.get('hostname', f"NODE_{client_ip.split('.')[-1]}")
     
     WEB_CLIPBOARD_CACHE = {
         "content": text_content,
@@ -200,7 +207,7 @@ def upload_file():
     if file:
         client_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
         device_info = HTTP_ACTIVE_DEVICES.get(client_ip, {})
-        sender_name = device_info.get('hostname', f"NODE-{client_ip.split('.')[-1]}").replace(" ", "_").upper()
+        sender_name = device_info.get('hostname', f"NODE_{client_ip.split('.')[-1]}").replace(" ", "_").upper()
         
         raw_filename = secure_filename(file.filename)
         stamped_filename = f"{sender_name}_{raw_filename}"

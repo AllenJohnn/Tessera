@@ -22,6 +22,11 @@
 </head>
 <body class="text-white min-h-screen flex flex-col items-center antialiased px-4 py-6 md:p-12 relative overflow-x-hidden grid-bg">
 
+    <div id="wake-banner" class="w-full max-w-5xl border border-amber-500/30 bg-amber-950/20 px-5 py-3 mb-4 text-[10px] mono text-amber-400 uppercase tracking-widest hidden flex items-center gap-2">
+        <span class="h-1.5 w-1.5 bg-amber-400 animate-ping rounded-full"></span>
+        <span>SYSTEM WAKING CONTAINER... EST. 30s (RENDER FREE TIER COLD START)</span>
+    </div>
+
     <header class="w-full max-w-5xl border border-[#1c1c1c] bg-black/90 backdrop-blur-md p-5 mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shadow-2xl">
         <div class="flex items-center gap-3">
             <div class="h-1.5 w-1.5 bg-white animate-pulse"></div>
@@ -41,14 +46,14 @@
         
         <div class="lg:col-span-2 space-y-6">
             
-            <section class="border border-[#1c1c1c] p-5 bg-black/95 shadow-xl">
+            <section id="devices-section" class="border border-[#1c1c1c] p-5 bg-black/95 shadow-xl">
                 <h2 class="text-[11px] font-medium uppercase tracking-widest text-neutral-400 mb-4 mono">// CONNECTED DEVICES</h2>
                 <div id="peers-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-2 min-h-[50px]">
-                    <p class="text-xs text-neutral-600 italic mono py-1">Searching...</p>
+                    <p class="text-xs text-neutral-600 uppercase tracking-wider mono py-1" id="peers-fallback">WAITING FOR PEER DEVICES...</p>
                 </div>
             </section>
             
-            <section class="border border-[#1c1c1c] p-5 bg-black/95 shadow-xl relative">
+            <section id="clipboard-sync-section" class="border border-[#1c1c1c] p-5 bg-black/95 shadow-xl relative">
                 <div class="flex justify-between items-baseline mb-3">
                     <h2 class="text-[11px] font-medium uppercase tracking-widest text-neutral-400 mono">// CLIPBOARD SYNC</h2>
                     <button type="button" id="reset-input-btn" class="text-[9px] mono text-neutral-600 hover:text-neutral-300 transition uppercase tracking-widest cursor-pointer font-medium select-none">[RESET]</button>
@@ -59,17 +64,17 @@
                 </button>
             </section>
 
-            <section class="border border-[#1c1c1c] p-5 bg-black/95 shadow-xl">
+            <section id="received-streams-section" class="border border-[#1c1c1c] p-5 bg-black/95 shadow-xl">
                 <div class="flex justify-between items-baseline mb-3">
                     <h2 class="text-[11px] font-medium uppercase tracking-widest text-neutral-400 mono">// RECEIVED TEXT STREAMS</h2>
                     <button type="button" id="clear-texts-btn" class="text-[9px] mono text-neutral-600 hover:text-rose-400 transition uppercase tracking-widest cursor-pointer font-medium select-none">clear</button>
                 </div>
                 <div id="text-stream-container" class="space-y-2 max-h-[220px] overflow-y-auto custom-scroll pr-1 flex flex-col gap-1.5">
-                    <p class="text-[10px] text-neutral-600 italic py-1 mono empty-stream-msg">No incoming text logs tracked...</p>
+                    <p class="text-[10px] text-neutral-600 uppercase tracking-wider py-1 mono empty-stream-msg">No incoming text logs tracked...</p>
                 </div>
             </section>
 
-            <section class="border border-[#1c1c1c] p-5 bg-black/95 shadow-xl">
+            <section id="file-transfer-section" class="border border-[#1c1c1c] p-5 bg-black/95 shadow-xl">
                 <h2 class="text-[11px] font-medium uppercase tracking-widest text-neutral-400 mb-3 mono">// FILE TRANSFER</h2>
                 <div id="drop-zone" class="border border-dashed border-[#2c2c2c] hover:border-neutral-500 p-10 text-center cursor-pointer bg-[#070707] transition duration-150 flex flex-col items-center justify-center min-h-[140px] hover:bg-[#0c0c0c]">
                     <input type="file" id="file-element" class="hidden">
@@ -78,7 +83,7 @@
                 
                 <div id="progress-container" class="mt-4 hidden bg-[#0a0a0a] border border-[#1c1c1c] p-3.5">
                     <div class="flex justify-between text-[10px] mono mb-2">
-                        <span id="status-text" class="text-neutral-500 uppercase tracking-wider">Sending...</span>
+                        <span id="status-text" class="text-neutral-500 uppercase tracking-wider">UPLOADING... [░░░░░░░░░░]</span>
                         <span id="progress-percent" class="text-white font-bold">0%</span>
                     </div>
                     <div class="w-full bg-neutral-900 h-[1px] overflow-hidden">
@@ -89,7 +94,7 @@
         </div>
 
         <div class="lg:col-span-1 w-full">
-            <section class="border border-[#1c1c1c] p-5 bg-black/95 shadow-xl flex flex-col min-h-[350px] lg:min-h-[515px]">
+            <section id="history-section" class="border border-[#1c1c1c] p-5 bg-black/95 shadow-xl flex flex-col min-h-[350px] lg:min-h-[515px]">
                 <div class="flex justify-between items-baseline mb-4 pb-2 border-b border-[#1c1c1c]">
                     <h2 class="text-[11px] font-medium uppercase tracking-widest text-neutral-400 mono">// HISTORY</h2>
                     <div class="flex gap-3">
@@ -98,7 +103,7 @@
                     </div>
                 </div>
                 <div id="files-list" class="space-y-2 overflow-y-auto pr-1 flex-1 text-xs mono custom-scroll max-h-[380px] lg:max-h-none">
-                    <p class="text-[10px] text-neutral-600 italic py-1">Indexing...</p>
+                    <p class="text-[10px] text-neutral-600 uppercase tracking-wider py-1" id="history-fallback">NO TRANSFERS TRACKED YET</p>
                 </div>
             </section>
         </div>
