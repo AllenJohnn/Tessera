@@ -72,10 +72,8 @@ def register_device_ping():
     # Extract the true external client IP behind the cloud proxy layer
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
     
-    # FIXED: Check if the client already has a known identity, or generate a zero-friction fallback
     assigned_hostname = data.get("hostname")
     if not assigned_hostname:
-        # Check if we already assigned them a name previously to avoid rapid cycling
         if client_ip in HTTP_ACTIVE_DEVICES:
             assigned_hostname = HTTP_ACTIVE_DEVICES[client_ip]["hostname"]
         else:
@@ -96,7 +94,6 @@ def register_device_ping():
         "last_seen": time.time()
     }
     
-    # Return the callsign back to frontend so it can synchronize local memory stores
     return jsonify({"status": "acknowledged", "assigned_name": assigned_hostname})
 
 @app.route('/api/peers', methods=['GET'])
@@ -108,15 +105,18 @@ def get_discovered_peers():
         for ip, data in discovery_node.get_active_peers().items():
             unified_devices[ip] = {
                 "hostname": data.get("hostname", "Unknown PC"),
-                "type": "Desktop Core Node"
+                "type": "Desktop Core Node",
+                "last_seen": data.get("last_seen", now)
             }
             
     for ip, data in list(HTTP_ACTIVE_DEVICES.items()):
         if now - data["last_seen"] < 12:
             if ip not in unified_devices:
+                # FIXED: Added the explicit last_seen dictionary passing map layer
                 unified_devices[ip] = {
                     "hostname": data["hostname"],
-                    "type": data["type"]
+                    "type": data["type"],
+                    "last_seen": data["last_seen"]
                 }
         else:
             HTTP_ACTIVE_DEVICES.pop(ip, None)
@@ -133,11 +133,9 @@ def update_clipboard():
     text_content = data['content']
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
     
-    # FIXED: Extract sender identity from live tracking registry maps
     device_info = HTTP_ACTIVE_DEVICES.get(client_ip, {})
     sender_name = device_info.get('hostname', f"NODE [{client_ip.split('.')[-1]}]")
     
-    # Pack the payload bundled explicitly with its creator signature tag
     WEB_CLIPBOARD_CACHE = {
         "content": text_content,
         "sender": sender_name,
@@ -162,13 +160,11 @@ def update_clipboard():
 
 @app.route('/api/clipboard/get', methods=['GET'])
 def get_cached_clipboard():
-    """Allows client instances to pull the latest text block from memory."""
     global WEB_CLIPBOARD_CACHE
     return jsonify(WEB_CLIPBOARD_CACHE)
 
 @app.route('/api/send_peer', methods=['POST'])
 def send_file_to_peer():
-    """Handles routing files to active desktop nodes or fallback cloud pools."""
     global transfer_node
     data = request.get_json() or {}
     target_ip = data.get("target_ip")
@@ -206,7 +202,6 @@ def upload_file():
         device_info = HTTP_ACTIVE_DEVICES.get(client_ip, {})
         sender_name = device_info.get('hostname', f"NODE-{client_ip.split('.')[-1]}").replace(" ", "_").upper()
         
-        # FIXED: Append structural sender initials onto file descriptors to clear multi-device overlap
         raw_filename = secure_filename(file.filename)
         stamped_filename = f"{sender_name}_{raw_filename}"
         

@@ -11,23 +11,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const filesList = document.getElementById('files-list');
     const refreshFilesBtn = document.getElementById('refresh-files-btn');
     const clearFilesBtn = document.getElementById('clear-files-btn');
-    const nodeIpDisplay = document.getElementById('node-ip');
     const peersGrid = document.getElementById('peers-grid');
     const textStreamContainer = document.getElementById('text-stream-container');
 
-    // FIXED: Element bindings mapping to the header station identification labels
+    // Element bindings mapping to header station identification labels
     const displayNameField = document.getElementById('display-name');
     const editNameBtn = document.getElementById('edit-name-btn');
+
+    // NEW ELEMENT BINDINGS: Multi-device functional interactive nodes
+    const clearTextsBtn = document.getElementById('clear-texts-btn');
+    const resetInputBtn = document.getElementById('reset-input-btn');
 
     let selectedPeerIp = null;
     let lastSeenTimestamp = 0; 
     
-    // Read the locally configured custom callsign if it exists in browser memory cache
+    // Read locally configured custom callsign if it exists in browser memory cache
     let sessionCallsign = localStorage.getItem('tessera_callsign') || "";
-
-    if (nodeIpDisplay) {
-        nodeIpDisplay.textContent = window.location.hostname;
-    }
 
     function showToast(message, isError = false) {
         const toast = document.getElementById('toast');
@@ -48,18 +47,16 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('/api/ping', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ "hostname": sessionCallsign }) // Sends empty string if unassigned, triggering random fallback
+                body: JSON.stringify({ "hostname": sessionCallsign })
             });
             
             if (response.ok) {
                 const data = await response.json();
-                // FIXED: If we didn't have a name yet, adopt and lock the backend's auto-generated tag
                 if (!sessionCallsign && data.assigned_name) {
                     sessionCallsign = data.assigned_name;
                     localStorage.setItem('tessera_callsign', sessionCallsign);
                 }
                 
-                // Update header interface label tracking
                 if (displayNameField) {
                     displayNameField.textContent = sessionCallsign;
                 }
@@ -88,13 +85,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
             peersGrid.innerHTML = peerEntries.map(([ip, data]) => {
                 const isSelected = selectedPeerIp === ip;
+                
+                // FIXED: Check heartbeats dynamically to render green pulse dots for active sessions
+                const isLiveNow = (Date.now() / 1000) - data.last_seen < 12;
+                const indicatorDot = isLiveNow 
+                    ? `<div class="h-2 w-2 rounded-full bg-emerald-500 animate-pulse shrink-0 ml-3"></div>`
+                    : `<div class="h-2 w-2 rounded-full bg-amber-600 shrink-0 ml-3"></div>`;
+
                 return `
                     <div data-ip="${ip}" class="peer-card border ${isSelected ? 'border-white bg-neutral-900/40' : 'border-[#1c1c1c] bg-[#070707]'} p-3.5 cursor-pointer hover:border-neutral-500 transition duration-100 flex items-center justify-between">
                         <div class="truncate">
                             <p class="text-xs font-semibold tracking-tight truncate ${isSelected ? 'text-white' : 'text-neutral-400'}">${data.hostname}</p>
                             <p class="text-[10px] text-neutral-600 mono mt-1">${ip} // ${data.type.toUpperCase()}</p>
                         </div>
-                        <div class="h-2 w-2 rounded-none border ${isSelected ? 'bg-white border-white' : 'border-neutral-800'} shrink-0"></div>
+                        <div class="flex items-center gap-2">
+                            <div class="h-2 w-2 rounded-none border ${isSelected ? 'bg-white border-white' : 'border-neutral-800'} shrink-0"></div>
+                            ${indicatorDot}
+                        </div>
                     </div>
                 `;
             }).join('');
@@ -146,7 +153,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!response.ok) return;
             const data = await response.json();
 
-            // Evaluate if incoming segment presents a fresh epoch timestamp state
             if (data && data.content && data.timestamp > lastSeenTimestamp) {
                 lastSeenTimestamp = data.timestamp;
 
@@ -160,7 +166,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const senderTag = data.sender ? data.sender.toUpperCase() : "UNKNOWN";
 
                 textRow.innerHTML = `
-                    <div class="truncate max-w-[75%]">
+                    <div class="truncate max-w-[72%]">
                         <p class="text-neutral-300 text-xs font-medium break-all select-all">${displayText}</p>
                         <p class="text-[9px] text-neutral-500 mono mt-1 uppercase tracking-wide">RECEIVED FROM // ${senderTag}</p>
                     </div>
@@ -196,13 +202,32 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
                 
-                // Update local instances and commit variables straight down local memory arrays
                 sessionCallsign = sanitizedInput;
                 localStorage.setItem('tessera_callsign', sessionCallsign);
                 if (displayNameField) displayNameField.textContent = sessionCallsign;
                 
                 showToast(`callsign assigned: ${sessionCallsign}`);
-                broadcastMobilePresence(); // Push instance state directly over system endpoints
+                broadcastMobilePresence(); 
+            }
+        });
+    }
+
+    // FIXED: Clear operation implementation for dynamic text rows
+    if (clearTextsBtn) {
+        clearTextsBtn.addEventListener('click', () => {
+            if (textStreamContainer) {
+                textStreamContainer.innerHTML = `<p class="text-[10px] text-neutral-600 italic py-1 mono empty-stream-msg">No incoming text logs tracked...</p>`;
+                showToast('text feed cleared');
+            }
+        });
+    }
+
+    // FIXED: One-click fast reset clear utility macro macro tracking hook inside input elements
+    if (resetInputBtn) {
+        resetInputBtn.addEventListener('click', () => {
+            if (clipboardInput) {
+                clipboardInput.value = '';
+                showToast('input buffer cleared');
             }
         });
     }
@@ -315,13 +340,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function initTessera() {
-        // Run initial synchronization passes instantly on document mount points
         await broadcastMobilePresence(); 
         await queryLiveNetworkPeers();   
         await loadAvailableFiles();      
         await checkIncomingTextStreams(); 
         
-        // Asynchronous monitoring configurations handling periodic infrastructure evaluation
         setInterval(broadcastMobilePresence, 4000);
         setInterval(queryLiveNetworkPeers, 4000);
         setInterval(checkIncomingTextStreams, 2000); 
