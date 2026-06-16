@@ -38,7 +38,9 @@ def generate_terminal_qr(url):
     qr = qrcode.QRCode(version=1, box_size=1, border=1)
     qr.add_data(url)
     qr.make(fit=True)
-    qr.print_tty()
+    
+    # Force printing with standard text characters instead of broken ANSI blocks
+    qr.print_ascii(invert=True)
 
 @app.route('/')
 def index():
