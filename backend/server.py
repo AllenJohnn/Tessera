@@ -100,11 +100,6 @@ def get_discovered_peers():
         return jsonify(discovery_node.get_active_peers())
     return jsonify({})
 
-@app.route('/api/history', methods=['GET'])
-def get_sync_history():
-    if db_store:
-        return jsonify(db_store.get_transfer_history())
-    return jsonify([])
 
 @app.route('/api/send_peer', methods=['POST'])
 def send_file_to_peer():

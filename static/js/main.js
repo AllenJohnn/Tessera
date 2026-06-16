@@ -8,8 +8,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const progressPercent = document.getElementById('progress-percent');
     const statusText = document.getElementById('status-text');
     
-    const historyList = document.getElementById('history-list');
-    const refreshHistoryBtn = document.getElementById('refresh-history-btn');
+    const filesList = document.getElementById('files-list');
+    const refreshFilesBtn = document.getElementById('refresh-files-btn');
     const nodeIpDisplay = document.getElementById('node-ip');
     const peersGrid = document.getElementById('peers-grid');
 
@@ -19,11 +19,10 @@ document.addEventListener('DOMContentLoaded', () => {
         nodeIpDisplay.textContent = window.location.hostname;
     }
 
-    // Stark Notification Banner Component
     function showToast(message, isError = false) {
         const toast = document.getElementById('toast');
-        toast.textContent = message;
-        toast.style.borderColor = isError ? '#551111' : '#333333';
+        toast.textContent = message.toUpperCase();
+        toast.style.borderColor = isError ? '#551111' : '#2c2c2c';
         toast.style.transform = 'translateY(0)';
         toast.style.opacity = '1';
         
@@ -33,7 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 3000);
     }
 
-    // Queries local subnets and generates clean minimalist device selections
+    // Subnet discovery mapping loop
     async function queryLiveNetworkPeers() {
         try {
             const response = await fetch('/api/peers');
@@ -43,8 +42,8 @@ document.addEventListener('DOMContentLoaded', () => {
             
             if (peerEntries.length === 0) {
                 peersGrid.innerHTML = `
-                    <div class="col-span-2 border border-[#222222] p-3 text-center bg-black">
-                        <p class="text-[11px] text-neutral-600 italic mono">No active network nodes detected.</p>
+                    <div class="col-span-2 border border-[#1c1c1c] p-4 text-center bg-[#070707]">
+                        <p class="text-[10px] text-neutral-600 italic mono uppercase tracking-wider">NO REMOTE DASHBOARD WORKSTATIONS DETECTED</p>
                     </div>`;
                 selectedPeerIp = null;
                 return;
@@ -53,12 +52,12 @@ document.addEventListener('DOMContentLoaded', () => {
             peersGrid.innerHTML = peerEntries.map(([ip, data]) => {
                 const isSelected = selectedPeerIp === ip;
                 return `
-                    <div data-ip="${ip}" class="peer-card border ${isSelected ? 'border-white bg-neutral-900' : 'border-[#222222] bg-black'} p-3 cursor-pointer hover:border-neutral-500 transition duration-100 flex items-center justify-between">
+                    <div data-ip="${ip}" class="peer-card border ${isSelected ? 'border-white bg-neutral-900/40' : 'border-[#1c1c1c] bg-[#070707]'} p-3.5 cursor-pointer hover:border-neutral-500 transition duration-100 flex items-center justify-between">
                         <div class="truncate">
-                            <p class="text-xs font-medium tracking-tight truncate ${isSelected ? 'text-white' : 'text-neutral-300'}">${data.hostname}</p>
-                            <p class="text-[10px] text-neutral-600 mono mt-0.5">${ip}</p>
+                            <p class="text-xs font-semibold tracking-tight truncate ${isSelected ? 'text-white' : 'text-neutral-400'}">${data.hostname}</p>
+                            <p class="text-[10px] text-neutral-600 mono mt-1">${ip}</p>
                         </div>
-                        <div class="h-2 w-2 rounded-none border ${isSelected ? 'bg-white border-white' : 'border-neutral-700'} shrink-0"></div>
+                        <div class="h-2 w-2 rounded-none border ${isSelected ? 'bg-white border-white' : 'border-neutral-800'} shrink-0"></div>
                     </div>
                 `;
             }).join('');
@@ -68,7 +67,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const targetIp = card.getAttribute('data-ip');
                     selectedPeerIp = (selectedPeerIp === targetIp) ? null : targetIp;
                     queryLiveNetworkPeers();
-                    showToast(selectedPeerIp ? `route: ${selectedPeerIp}` : 'route: local drop folder');
+                    showToast(selectedPeerIp ? `route locked: ${selectedPeerIp}` : 'route channel fallback: default storage');
                 });
             });
         } catch (err) {
@@ -76,27 +75,25 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Maps recent transactions out to plain minimalist data cards
-    async function loadTransferHistory() {
+    // Polished System Shared Ledger List Engine
+    async function loadAvailableFiles() {
         try {
-            const response = await fetch('/api/history');
+            const response = await fetch('/api/files');
             if (!response.ok) return;
-            const history = await response.json();
+            const files = await response.json();
             
-            if (history.length === 0) {
-                historyList.innerHTML = `<p class="text-[11px] text-neutral-600 italic py-4">No logged events.</p>`;
+            if (files.length === 0) {
+                filesList.innerHTML = `<p class="text-[10px] text-neutral-600 italic py-3 uppercase tracking-wider">LEDGER POOL EMPTY</p>`;
                 return;
             }
 
-            historyList.innerHTML = history.map(item => `
-                <div class="flex items-center justify-between bg-black p-2.5 border border-[#222222]">
-                    <div class="truncate max-w-[75%]">
-                        <p class="text-neutral-200 text-xs truncate font-medium">${item.filename}</p>
-                        <p class="text-[10px] text-neutral-600 mt-0.5">${item.peer_ip}</p>
+            filesList.innerHTML = files.map(file => `
+                <div class="flex items-center justify-between bg-[#070707] p-3 border border-[#1c1c1c] hover:border-neutral-800 transition duration-100">
+                    <div class="truncate max-w-[72%]">
+                        <a href="/storage/${encodeURIComponent(file.name)}" class="text-neutral-300 text-xs truncate font-medium hover:text-white block" download>${file.name}</a>
+                        <p class="text-[10px] text-neutral-600 mono mt-1">${file.size}</p>
                     </div>
-                    <span class="text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.5 border ${
-                        item.status === 'completed' ? 'border-neutral-800 text-neutral-400' : 'border-amber-900 text-amber-500'
-                    }">${item.status}</span>
+                    <a href="/storage/${encodeURIComponent(file.name)}" class="text-[9px] font-bold tracking-widest px-2.5 py-1.5 border border-neutral-800 text-neutral-400 hover:border-white hover:text-white transition duration-100 uppercase" download>GET</a>
                 </div>
             `).join('');
         } catch (err) {
@@ -104,15 +101,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    refreshHistoryBtn.addEventListener('click', loadTransferHistory);
+    refreshFilesBtn.addEventListener('click', loadAvailableFiles);
 
-    // Text Sync Thread Dispatch Logic
+    // Text sync payload submission pipeline
     syncTextBtn.addEventListener('click', async (e) => {
-        // ALWAYS STOP THE BROWSER FROM RELOADING THE PAGE RIGHT AWAY
         e.preventDefault(); 
-        
         const content = clipboardInput.value.trim();
-        if (!content) return showToast('Input text string block empty.', true);
+        if (!content) return showToast('Buffer string argument empty.', true);
 
         try {
             const response = await fetch('/api/clipboard', {
@@ -121,13 +116,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify({ content })
             });
             if (response.ok) {
-                showToast('PC clipboard updated');
+                showToast('system clipboard injected');
                 clipboardInput.value = '';
             } else {
-                showToast('Sync pipeline failed', true);
+                showToast('sync channel faulted', true);
             }
         } catch (err) {
-            showToast('Connection error', true);
+            showToast('communication error', true);
         }
     });
 
@@ -141,7 +136,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function handleFileUpload(file) {
         if (selectedPeerIp) {
             progressContainer.classList.remove('hidden');
-            statusText.textContent = `Pushing to remote node...`;
+            statusText.textContent = `PUSHING DATASTREAM PACKETS TO SOCKET...`;
             progressBar.style.width = '100%';
             progressPercent.textContent = 'SOCKET';
 
@@ -153,13 +148,13 @@ document.addEventListener('DOMContentLoaded', () => {
             .then(res => res.json())
             .then(data => {
                 if (data.status === 'success') {
-                    showToast('Socket sync complete');
-                    statusText.textContent = "Complete";
+                    showToast('socket operation successful');
+                    statusText.textContent = "COMPLETE";
                 } else {
-                    showToast('Socket dropped', true);
+                    showToast('socket stream aborted', true);
                 }
                 setTimeout(() => progressContainer.classList.add('hidden'), 2000);
-                loadTransferHistory();
+                loadAvailableFiles();
             });
             fileElement.value = '';
             return;
@@ -169,14 +164,14 @@ document.addEventListener('DOMContentLoaded', () => {
         formData.append('file', file);
 
         progressContainer.classList.remove('hidden');
-        statusText.textContent = "Streaming to local disk...";
+        statusText.textContent = "WRITING FILE SECTOR ENCODINGS TO HOST STORAGE...";
         progressBar.style.width = '0%';
         progressPercent.textContent = '0%';
 
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', '/api/upload', true);
+        const clientRequest = new XMLHttpRequest();
+        clientRequest.open('POST', '/api/upload', true);
 
-        xhr.upload.addEventListener('progress', (e) => {
+        clientRequest.upload.addEventListener('progress', (e) => {
             if (e.lengthComputable) {
                 const percent = Math.round((e.loaded / e.total) * 100);
                 progressBar.style.width = `${percent}%`;
@@ -184,53 +179,21 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        xhr.onload = () => {
-            if (xhr.status === 200) {
-                showToast('Drop folder stream finalized');
-                statusText.textContent = "Complete";
-                loadTransferHistory();
+        clientRequest.onload = () => {
+            if (clientRequest.status === 200) {
+                showToast('binary drop complete');
+                statusText.textContent = "COMPLETE";
+                loadAvailableFiles();
             } else {
-                showToast('Pipeline crash', true);
+                showToast('pipeline channel crash', true);
             }
             setTimeout(() => progressContainer.classList.add('hidden'), 2000);
             fileElement.value = ''; 
         };
-        xhr.send(formData);
+        clientRequest.send(formData);
     }
 
-    loadTransferHistory();
+    loadAvailableFiles();
     queryLiveNetworkPeers();
     setInterval(queryLiveNetworkPeers, 5000);
-
-    const filesList = document.getElementById('files-list');
-    const refreshFilesBtn = document.getElementById('refresh-files-btn');
-
-    async function loadAvailableFiles() {
-        try {
-            const response = await fetch('/api/files');
-            if (!response.ok) return;
-            const files = await response.json();
-            
-            if (files.length === 0) {
-                filesList.innerHTML = `<p class="text-[11px] text-neutral-600 italic py-4">No files in storage.</p>`;
-                return;
-            }
-
-            filesList.innerHTML = files.map(file => `
-                <div class="flex items-center justify-between bg-black p-2.5 border border-[#222222]">
-                    <div class="truncate max-w-[70%]">
-                        <a href="/storage/${encodeURIComponent(file.name)}" class="text-neutral-200 text-xs truncate font-medium hover:underline hover:text-blue-400" download>${file.name}</a>
-                        <p class="text-[10px] text-neutral-600 mt-0.5">${file.size}</p>
-                    </div>
-                    <a href="/storage/${encodeURIComponent(file.name)}" class="text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.5 border border-neutral-700 text-neutral-400 hover:border-white hover:text-white" download>GET</a>
-                </div>
-            `).join('');
-        } catch (err) {
-            console.error(err);
-        }
-    }
-
-    refreshFilesBtn.addEventListener('click', loadAvailableFiles);
-    // Call automatically on load
-    loadAvailableFiles();
 });

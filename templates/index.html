@@ -9,96 +9,90 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Inter', sans-serif; }
+        body { font-family: 'Inter', sans-serif; background-color: #050505; }
         .mono { font-family: 'Geist Mono', monospace; }
-        /* Ultra-sharp minimal border layout styling */
-        .border-main { border-color: #222222; }
+        
+        /* Premium engineering layout alignment utilities */
+        .grid-bg {
+            background-image: linear-gradient(to right, #111 1px, transparent 1px), linear-gradient(to bottom, #111 1px, transparent 1px);
+            background-size: 24px 24px;
+        }
+        .custom-scroll::-webkit-scrollbar { width: 3px; }
+        .custom-scroll::-webkit-scrollbar-track { background: transparent; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #222; }
     </style>
 </head>
-<body class="bg-black text-white min-h-screen flex flex-col items-center antialiased p-6">
-    
-    <header class="w-full max-w-4xl border-b border-[#222222] pb-4 mb-8 flex justify-between items-baseline">
-        <div class="flex items-baseline gap-2">
-            <h1 class="text-lg font-semibold tracking-tight">tessera</h1>
-            <span class="text-[10px] mono text-neutral-500 uppercase">lan.sync</span>
+<body class="text-white min-h-screen flex flex-col items-center antialiased px-4 py-6 md:p-12 relative overflow-x-hidden grid-bg">
+
+    <header class="w-full max-w-5xl border border-[#1c1c1c] bg-black/80 backdrop-blur-md p-5 mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shadow-2xl">
+        <div class="flex items-center gap-3">
+            <div class="h-2 w-2 bg-white animate-pulse"></div>
+            <h1 class="text-md font-medium tracking-widest uppercase mono">tessera</h1>
         </div>
-        <div class="text-[11px] mono text-neutral-400 flex gap-4">
-            <div>node: <span class="text-white">LOQ</span></div>
-            <div>ip: <span class="text-white" id="node-ip">0.0.0.0</span></div>
+        <div class="text-[10px] mono text-neutral-400 flex flex-wrap gap-x-6 gap-y-1 w-full sm:w-auto justify-between sm:justify-end">
+            <div>NODE // <span class="text-white font-medium">LOQ</span></div>
+            <div>ADDR // <span class="text-white font-medium" id="node-ip">0.0.0.0</span></div>
         </div>
     </header>
 
-    <main class="w-full max-w-4xl grid grid-cols-1 md:grid-cols-3 gap-8 items-start">
+    <main class="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         
-        <div class="md:col-span-2 space-y-8">
+        <div class="lg:col-span-2 space-y-6">
             
-            <section class="border border-[#222222] p-5 bg-neutral-950/40">
-                <h2 class="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-3">active devices</h2>
+            <section class="border border-[#1c1c1c] p-5 bg-black/90 shadow-xl relative">
+                <div class="absolute top-0 right-0 text-[9px] mono text-neutral-700 p-2 uppercase tracking-tight select-none">SYS.DISC</div>
+                <h2 class="text-[11px] font-medium uppercase tracking-widest text-neutral-400 mb-4 mono">// NETWORK PEERS</h2>
                 <div id="peers-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <p class="text-xs text-neutral-600 italic mono">Scanning network...</p>
+                    <p class="text-xs text-neutral-600 italic mono py-1">Polling active channels...</p>
                 </div>
             </section>
             
-            <section class="border border-[#222222] p-5 bg-neutral-950/40">
-                <h2 class="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-3">clipboard sync</h2>
-                <textarea id="clipboard-input" rows="3" class="w-full p-3 bg-black border border-[#222222] focus:border-neutral-500 rounded-none focus:outline-none text-xs text-neutral-200 placeholder-neutral-700 mono resize-none" placeholder="Paste data to send to host PC..."></textarea>
-                <button type="button" id="sync-text-btn" class="w-full mt-3 bg-white hover:bg-neutral-200 text-black font-medium py-2 px-4 text-xs transition duration-150 rounded-none uppercase tracking-wider cursor-pointer">
-                    push text
+            <section class="border border-[#1c1c1c] p-5 bg-black/90 shadow-xl relative">
+                <div class="absolute top-0 right-0 text-[9px] mono text-neutral-700 p-2 uppercase tracking-tight select-none">IO.CLIP</div>
+                <h2 class="text-[11px] font-medium uppercase tracking-widest text-neutral-400 mb-3 mono">// CLIPBOARD RELAY</h2>
+                <textarea id="clipboard-input" rows="3" class="w-full p-4 bg-[#0a0a0a] border border-[#1c1c1c] focus:border-neutral-500 rounded-none focus:outline-none text-xs text-neutral-300 placeholder-neutral-700 mono resize-none transition-colors duration-150" placeholder="Paste target content block here..."></textarea>
+                <button type="button" id="sync-text-btn" class="w-full mt-3 bg-white hover:bg-neutral-200 active:bg-neutral-300 text-black font-semibold py-3 px-4 text-[10px] mono transition duration-100 rounded-none uppercase tracking-widest cursor-pointer">
+                    execute string push
                 </button>
             </section>
 
-            <section class="border border-[#222222] p-5 bg-neutral-950/40">
-                <h2 class="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-3">file transfer</h2>
-                <div id="drop-zone" class="border border-dashed border-[#333333] hover:border-neutral-500 p-8 text-center cursor-pointer bg-neutral-950/20 transition duration-150">
+            <section class="border border-[#1c1c1c] p-5 bg-black/90 shadow-xl relative">
+                <div class="absolute top-0 right-0 text-[9px] mono text-neutral-700 p-2 uppercase tracking-tight select-none">FS.PIPE</div>
+                <h2 class="text-[11px] font-medium uppercase tracking-widest text-neutral-400 mb-3 mono">// FILE STREAM</h2>
+                <div id="drop-zone" class="border border-dashed border-[#2c2c2c] hover:border-neutral-500 p-10 text-center cursor-pointer bg-[#070707] transition duration-150 flex flex-col items-center justify-center min-h-[140px]">
                     <input type="file" id="file-element" class="hidden">
-                    <p class="text-xs text-neutral-400">Select file source to stream</p>
+                    <p class="text-xs text-neutral-300 mono tracking-wide">SELECT INPUT PAYLOAD SOURCE</p>
+                    <p class="text-[10px] text-neutral-600 mono mt-1.5 max-w-xs">Direct socket pipeline delivery over local interface channels</p>
                 </div>
                 
-                <div id="progress-container" class="mt-4 hidden bg-black border border-[#222222] p-3">
-                    <div class="flex justify-between text-[11px] mono mb-1.5">
-                        <span id="status-text" class="text-neutral-400">Uploading...</span>
+                <div id="progress-container" class="mt-4 hidden bg-[#0a0a0a] border border-[#1c1c1c] p-3.5">
+                    <div class="flex justify-between text-[10px] mono mb-2">
+                        <span id="status-text" class="text-neutral-500 uppercase tracking-wider">Streaming packets...</span>
                         <span id="progress-percent" class="text-white font-bold">0%</span>
                     </div>
-                    <div class="w-full bg-neutral-900 h-1 overflow-hidden">
+                    <div class="w-full bg-neutral-900 h-[1px] overflow-hidden">
                         <div id="progress-bar" class="bg-white h-full w-0 transition-all duration-150"></div>
                     </div>
                 </div>
             </section>
         </div>
 
-        <div class="md:col-span-1">
-            <section class="border border-[#222222] p-5 bg-neutral-950/40 flex flex-col min-h-[460px]">
-                <div class="flex justify-between items-baseline mb-4 pb-2 border-b border-[#222222]">
-                    <h2 class="text-xs font-semibold uppercase tracking-wider text-neutral-400">history log</h2>
-                    <button id="refresh-history-btn" class="text-[10px] mono text-neutral-500 hover:text-white transition uppercase cursor-pointer">refresh</button>
+        <div class="lg:col-span-1 w-full">
+            <section class="border border-[#1c1c1c] p-5 bg-black/90 shadow-xl flex flex-col min-h-[350px] lg:min-h-[515px] relative">
+                <div class="absolute top-0 right-0 text-[9px] mono text-neutral-700 p-2 uppercase tracking-tight select-none">DB.REGS</div>
+                <div class="flex justify-between items-baseline mb-4 pb-2 border-b border-[#1c1c1c]">
+                    <h2 class="text-[11px] font-medium uppercase tracking-widest text-neutral-400 mono">// NODE FILE LEDGER</h2>
+                    <button type="button" id="refresh-files-btn" class="text-[9px] mono text-neutral-500 hover:text-white transition uppercase tracking-widest cursor-pointer">sync</button>
                 </div>
-                <div id="history-list" class="space-y-2 overflow-y-auto pr-1 flex-1 text-xs mono">
+                <div id="files-list" class="space-y-2 overflow-y-auto pr-1 flex-1 text-xs mono custom-scroll max-h-[380px] lg:max-h-none">
+                    <p class="text-[10px] text-neutral-600 italic py-1">Indexing directories...</p>
                 </div>
-            </section>
-        </div>
-
-<div class="md:col-span-1 space-y-8">
-            <section class="border border-[#222222] p-5 bg-neutral-950/40 flex flex-col min-h-[220px]">
-                <div class="flex justify-between items-baseline mb-4 pb-2 border-b border-[#222222]">
-                    <h2 class="text-xs font-semibold uppercase tracking-wider text-neutral-400">history log</h2>
-                    <button id="refresh-history-btn" class="text-[10px] mono text-neutral-500 hover:text-white transition uppercase cursor-pointer">refresh</button>
-                </div>
-                <div id="history-list" class="space-y-2 overflow-y-auto pr-1 flex-1 text-xs mono"></div>
-            </section>
-
-            <section class="border border-[#222222] p-5 bg-neutral-950/40 flex flex-col min-h-[220px]">
-                <div class="flex justify-between items-baseline mb-4 pb-2 border-b border-[#222222]">
-                    <h2 class="text-xs font-semibold uppercase tracking-wider text-neutral-400">available files</h2>
-                    <button id="refresh-files-btn" class="text-[10px] mono text-neutral-500 hover:text-white transition uppercase cursor-pointer">scan</button>
-                </div>
-                <div id="files-list" class="space-y-2 overflow-y-auto pr-1 flex-1 text-xs mono">
-                    </div>
             </section>
         </div>
 
     </main>
 
-    <div id="toast" class="fixed bottom-6 text-xs uppercase tracking-wider font-medium px-4 py-2 bg-neutral-900 border border-[#333333] text-white shadow-2xl translate-y-20 opacity-0 transition-all duration-200"></div>
+    <div id="toast" class="fixed bottom-6 text-[10px] mono uppercase tracking-widest font-medium px-5 py-3 bg-neutral-900 border border-[#2c2c2c] text-white shadow-2xl translate-y-20 opacity-0 transition-all duration-200 z-50"></div>
 
     <script src="/static/js/main.js?v={{ version }}"></script>
 </body>
