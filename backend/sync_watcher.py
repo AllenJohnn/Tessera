@@ -1,68 +1,67 @@
 import os
 import time
-import requests
+import threading
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
-class TesseraFolderSyncHandler(FileSystemEventHandler):
-    def __init__(self, local_ip):
+class TesseraFolderHandler(FileSystemEventHandler):
+    def __init__(self, local_ip, storage_dir):
         self.local_ip = local_ip
-        # Target local web endpoint to safely fetch active network peers
-        self.peers_api_url = f"http://127.0.0.1:5000/api/peers"
+        self.storage_dir = storage_dir
+        self.last_triggered = {}
 
-    def _get_active_peers(self):
-        """Queries the local discovery node via API to find target destination IPs."""
-        try:
-            response = requests.get(self.peers_api_url, timeout=2)
-            if response.status_code == 200:
-                return response.json()
-        except Exception:
-            pass
-        return {}
-
-    def _trigger_peer_sync(self, file_path):
-        """Tells the local server to push this modified file to all discovered network nodes."""
-        # Skip temporary files or system configuration directories
-        if ".landrop" in file_path or ".git" in file_path:
-            return
-
-        peers = self._get_active_peers()
-        if not peers:
-            return
-
-        print(f"\n⚡ [Sync Event] Detected change in: {os.path.basename(file_path)}")
-        
-        # Loop through every discovered PC on the LAN and trigger a chunked socket upload
-        for peer_ip in peers.keys():
-            try:
-                sync_payload = {
-                    "target_ip": peer_ip,
-                    "file_path": os.path.abspath(file_path)
-                }
-                # Call our server's internal outbound endpoint to start the TCP stream
-                requests.post("http://127.0.0.1:5000/api/send_peer", json=sync_payload, timeout=2)
-                print(f"   ↳ Outbound sync signal dispatched to workstation: {peer_ip}")
-            except Exception as e:
-                print(f"   ❌ Failed to dispatch sync stream to {peer_ip}: {e}")
-
-    # Intercept filesystem events natively provided by the OS kernel
     def on_created(self, event):
-        if not event.is_directory:
-            self._trigger_peer_sync(event.src_path)
+        if event.is_directory:
+            return
+        self._process_sync_event(event.src_path)
 
     def on_modified(self, event):
-        if not event.is_directory:
-            self._trigger_peer_sync(event.src_path)
+        if event.is_directory:
+            return
+        self._process_sync_event(event.src_path)
 
+    def _process_sync_event(self, src_path):
+        filename = os.path.basename(src_path)
+        
+        # Debounce multiple consecutive kernel mod ticks
+        now = time.time()
+        if filename in self.last_triggered and now - self.last_triggered[filename] < 2:
+            return
+        self.last_triggered[filename] = now
 
-def start_folder_sync_watcher(local_ip):
-    """Spins up the OS-level filesystem event observer thread loop."""
-    watch_folder = os.path.abspath(os.path.join(os.path.dirname(__file__), '../sync_watch'))
-    os.makedirs(watch_folder, exist_ok=True)
+        # Wait briefly for file write handles to release gracefully
+        time.sleep(0.5)
+        if not os.path.exists(src_path) or os.path.getsize(src_path) == 0:
+            return
 
-    event_handler = TesseraFolderSyncHandler(local_ip)
+        print(f"🔄 [Sync Watcher] Active system mutation detected on file: {filename}")
+        
+        # Access global server memory variables to locate network peer maps
+        from server import discovery_node, transfer_node
+        if discovery_node and transfer_node:
+            active_peers = discovery_node.get_active_peers()
+            if not active_peers:
+                print("ℹ️ [Sync Watcher] File changed locally, but no desktop network peers are active.")
+                return
+
+            for peer_ip in active_peers.keys():
+                print(f"🚀 [Auto Sync] Routing copy of '{filename}' directly down mesh line to: {peer_ip}")
+                # Spin off execution into independent threads to keep filesystem monitoring non-blocking
+                threading.Thread(
+                    target=transfer_node.send_file, 
+                    args=(peer_ip, src_path), 
+                    daemon=True
+                ).start()
+
+def start_folder_sync_watcher(local_ip, watch_folder='../sync_watch'):
+    """Spins up a permanent, non-blocking background folder monitor daemon."""
+    target_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), watch_folder))
+    os.makedirs(target_dir, exist_ok=True)
+
+    event_handler = TesseraFolderHandler(local_ip, target_dir)
     observer = Observer()
-    observer.schedule(event_handler, path=watch_folder, recursive=True)
+    observer.schedule(event_handler, path=target_dir, recursive=False)
     observer.start()
-    print(f"[Sync Watcher] Active. Monitoring local directory: {watch_folder}")
+    
+    print(f"[Sync Watcher] Active. Monitoring local directory: {target_dir}")
     return observer
