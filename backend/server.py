@@ -5,8 +5,9 @@ from werkzeug.utils import secure_filename
 import pyperclip
 import qrcode
 
-# IMPORT THE INTEGRATED UDP REGISTRY LAYER
 from discovery import UDPDiscoveryEngine
+# IMPORT THE NEW CHUNKED TRANSFER ENGINE
+from transfer_engine import TesseraTransferEngine
 
 app = Flask(__name__, 
             template_folder='../templates', 
@@ -18,8 +19,9 @@ app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024
 
 os.makedirs(DROP_ZONE, exist_ok=True)
 
-# Instantiate global tracker variable for our background threads
 discovery_node = None
+# Instantiate Global Variable pointer for our TCP stream service
+transfer_node = None
 
 def get_local_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -33,7 +35,6 @@ def get_local_ip():
     return local_ip
 
 def generate_terminal_qr(url):
-    """Generates a highly scannable, clean QR code natively inside the terminal console output."""
     qr = qrcode.QRCode(version=1, box_size=1, border=1)
     qr.add_data(url)
     qr.make(fit=True)
@@ -68,12 +69,25 @@ def upload_file():
         print(f"\n📥 [File Drop] Successfully saved file '{filename}' from address {request.remote_addr}")
         return jsonify({'status': 'success', 'message': f"Stored context as {filename}"})
 
-# NEW INTEGRATED ENDPOINT: Exposes live structural LAN node mapping data
 @app.route('/api/peers', methods=['GET'])
 def get_discovered_peers():
     if discovery_node:
         return jsonify(discovery_node.get_active_peers())
     return jsonify({})
+
+# NEW OUTBOUND TRIGGER ENDPOINT: Tells this PC to send a file to another PC via raw TCP sockets
+@app.route('/api/send_peer', methods=['POST'])
+def send_file_to_peer():
+    data = request.get_json()
+    if not data or 'target_ip' not in data or 'file_path' not in data:
+        return jsonify({'error': 'Missing parameters target_ip or file_path'}), 400
+    
+    if transfer_node:
+        success = transfer_node.send_file(data['target_ip'], data['file_path'])
+        if success:
+            return jsonify({'status': 'success', 'message': f"Outbound stream initiated for {data['file_path']}"})
+        return jsonify({'error': 'File initialization engine error'}), 500
+    return jsonify({'error': 'Transfer backend node offline'}), 500
 
 if __name__ == '__main__':
     local_ip = get_local_ip()
@@ -81,10 +95,14 @@ if __name__ == '__main__':
     port = 5000
     server_url = f"http://{local_ip}:{port}"
     
-    # Initialize parallel UDP engines
+    # Initialize UDP discovery engines
     discovery_node = UDPDiscoveryEngine(local_ip=local_ip, hostname=hostname)
     discovery_node.start_broadcaster()
     discovery_node.start_listener()
+    
+    # Fire up the parallel high-speed TCP Socket stream layer
+    transfer_node = TesseraTransferEngine(local_ip=local_ip)
+    transfer_node.start_receiver_server()
     
     print("\n" + "═"*50)
     print(f" 🌟 TESSERA INTERFACE HOST: ACTIVE 🌟 ")
@@ -96,5 +114,4 @@ if __name__ == '__main__':
     print(f"\nLocal URI string pointer: {server_url}")
     print("═"*50 + "\n")
     
-    # use_reloader=False stops Flask from starting duplicate threads that crash your socket allocations
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
