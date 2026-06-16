@@ -72,7 +72,8 @@ def register_device_ping():
     else:
         device_type = "Web Workstation"
         
-    client_ip = request.remote_addr
+    # FIXED: Extract the true external client IP behind the cloud proxy layer
+    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
     
     HTTP_ACTIVE_DEVICES[client_ip] = {
         "hostname": data.get("hostname", f"Satellite [{client_ip.split('.')[-1]}]"),
@@ -113,6 +114,10 @@ def update_clipboard():
         return jsonify({'error': 'No text content detected'}), 400
         
     text_content = data['content']
+    
+    # FIXED: Extract proxy IP for reliable cross-network identification
+    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
+    
     WEB_CLIPBOARD_CACHE = {"content": text_content, "timestamp": time.time()}
     
     try:
@@ -125,33 +130,37 @@ def update_clipboard():
             win32clipboard.CloseClipboard()
         except ImportError:
             pass
-        print(f"\n📋 [Clipboard] Direct hardware sync completed from node: {request.remote_addr}")
+        print(f"\n📋 [Clipboard] Direct hardware sync completed from node: {client_ip}")
     except Exception:
-        print(f"\n☁️ [Cloud Clipboard] Text cached successfully in memory (Headless Node Mode).")
+        print(f"\n☁️ [Cloud Clipboard] Text cached successfully in memory for client: {client_ip}")
 
     return jsonify({'status': 'success', 'message': 'Clipboard Updated!'})
 
-# NEW ENDPOINT: Intercepts and fields the frontend P2P transfer requests
+# ADDED ENDPOINT: Serves the latest text string cache to the frontend stream container
+@app.route('/api/clipboard/get', methods=['GET'])
+def get_cached_clipboard():
+    """Allows client instances to pull the latest text block from memory."""
+    global WEB_CLIPBOARD_CACHE
+    return jsonify(WEB_CLIPBOARD_CACHE)
+
 @app.route('/api/send_peer', methods=['POST'])
 def send_file_to_peer():
     """Handles routing files to active desktop nodes or fallback cloud pools."""
     global transfer_node
     data = request.get_json() or {}
     target_ip = data.get("target_ip")
-    filename = data.get("file_path")  # Comes from front-end input tracking
+    filename = data.get("file_path")
     
     if not target_ip or not filename:
         return jsonify({"status": "error", "message": "Missing arguments"}), 400
         
     actual_file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
 
-    # If the targeted node is just a web client session, bypass raw TCP socket loops
     if target_ip in HTTP_ACTIVE_DEVICES:
         print(f"ℹ️ [Routing Switch] Target {target_ip} is a browser client. Kept in local web storage.")
         return jsonify({"status": "success", "message": "File prepared in cloud file ledger."})
 
     if transfer_node and os.path.exists(actual_file_path):
-        # Fire structural send sequence in isolated thread to prevent HTTP gateway blocks
         threading.Thread(
             target=transfer_node.send_file, 
             args=(target_ip, actual_file_path), 

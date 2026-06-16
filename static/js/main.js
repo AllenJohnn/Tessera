@@ -10,11 +10,15 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const filesList = document.getElementById('files-list');
     const refreshFilesBtn = document.getElementById('refresh-files-btn');
-    const clearFilesBtn = document.getElementById('clear-files-btn'); // New element binding
+    const clearFilesBtn = document.getElementById('clear-files-btn');
     const nodeIpDisplay = document.getElementById('node-ip');
     const peersGrid = document.getElementById('peers-grid');
 
+    // NEW ELEMENT BINDING: Locates the newly injected text ledger wrapper element
+    const textStreamContainer = document.getElementById('text-stream-container');
+
     let selectedPeerIp = null;
+    let lastSeenTimestamp = 0; // State token tracking historic clip mutations
 
     const dynamicDeviceName = (window.innerWidth < 640) ? "Mobile Phone" : "Laptop Client";
 
@@ -58,7 +62,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             if (peerEntries.length === 0) {
                 peersGrid.innerHTML = `
-                    <div class="col-span-2 border border-[#1c1c1c] p-4 text-center bg-[#070707]">
+                    <div class="col-span-2 border border-[#1c1c1c] p-4 text-center bg-[#070707] w-full">
                         <p class="text-[10px] text-neutral-600 italic mono uppercase tracking-wider">NO DEVICES DETECTED</p>
                     </div>`;
                 selectedPeerIp = null;
@@ -117,7 +121,53 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // ADDED: Clear action dispatcher pipeline hook
+    // NEW INTERFACE METHOD: Polls the web backend cache for new text payloads
+    async function checkIncomingTextStreams() {
+        if (!textStreamContainer) return;
+        try {
+            const response = await fetch('/api/clipboard/get');
+            if (!response.ok) return;
+            const data = await response.json();
+
+            // Evaluate if incoming segment presents a fresh epoch timestamp state
+            if (data && data.content && data.timestamp > lastSeenTimestamp) {
+                lastSeenTimestamp = data.timestamp;
+
+                const emptyMsg = textStreamContainer.querySelector('.empty-stream-msg');
+                if (emptyMsg) emptyMsg.remove();
+
+                const textRow = document.createElement('div');
+                textRow.className = "flex items-center justify-between bg-[#070707] p-3 border border-[#1c1c1c] hover:border-neutral-800 transition duration-100 animate-fade-in";
+                
+                // Truncate display string cleanly if text exceeds inline line boundaries
+                const displayText = data.content.length > 40 ? data.content.substring(0, 40) + "..." : data.content;
+
+                textRow.innerHTML = `
+                    <div class="truncate max-w-[75%]">
+                        <p class="text-neutral-300 text-xs truncate font-medium break-all select-all">${displayText}</p>
+                        <p class="text-[9px] text-neutral-600 mono mt-1 uppercase tracking-wide">TEXT BLOCK RECEIVED</p>
+                    </div>
+                    <button type="button" class="copy-stream-btn text-[9px] font-bold tracking-widest px-2.5 py-1.5 border border-neutral-800 text-neutral-400 hover:border-white hover:text-white hover:bg-white hover:text-black transition duration-100 uppercase cursor-pointer" data-raw="${encodeURIComponent(data.content)}">COPY</button>
+                `;
+
+                // Wire up click-to-copy utility directly onto the dynamic row node button
+                textRow.querySelector('.copy-stream-btn').addEventListener('click', function() {
+                    const rawContent = decodeURIComponent(this.getAttribute('data-raw'));
+                    navigator.clipboard.writeText(rawContent).then(() => {
+                        this.innerText = "COPIED!";
+                        setTimeout(() => this.innerText = "COPY", 1500);
+                    }).catch(() => showToast('browser copy blocked', true));
+                });
+
+                // Prepend newest clips on top of list
+                textStreamContainer.insertBefore(textRow, textStreamContainer.firstChild);
+                showToast('new text block received');
+            }
+        } catch (err) {
+            console.error("Text stream verification exception dropping:", err);
+        }
+    }
+
     clearFilesBtn.addEventListener('click', async () => {
         if (!confirm("CONFIRM COMMAND: PURGE ALL FILES INSIDE REPOSITORY HISTORIES?")) return;
         try {
@@ -149,6 +199,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (response.ok) {
                 showToast('clipboard updated');
                 clipboardInput.value = '';
+                // Trigger instant validation pass right after local user submissions
+                await checkIncomingTextStreams();
             } else {
                 showToast('sync channel fault', true);
             }
@@ -224,15 +276,17 @@ document.addEventListener('DOMContentLoaded', () => {
         clientRequest.send(formData);
     }
 
-    // FIXED IMEDIATE EXECUTION RUNTIMES: Fires ping + fetch immediately to remove latency
+    // FIXED IMMEDIATE EXECUTION RUNTIMES: Fires ping + fetch immediately to remove latency
     async function initTessera() {
-        await broadcastMobilePresence(); // Register instantly
-        await queryLiveNetworkPeers();   // Load data matrix instantly
-        await loadAvailableFiles();      // Fetch list instantly
+        await broadcastMobilePresence(); 
+        await queryLiveNetworkPeers();   
+        await loadAvailableFiles();      
+        await checkIncomingTextStreams(); // Check cache state on boot
         
-        // Fallback polling interval clocks setup afterward
+        // Background interval clocks monitoring network states asynchronously
         setInterval(broadcastMobilePresence, 4000);
         setInterval(queryLiveNetworkPeers, 4000);
+        setInterval(checkIncomingTextStreams, 2000); // Polling clipboard matrix every 2s
     }
 
     initTessera();
