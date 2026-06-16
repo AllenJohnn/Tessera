@@ -6,8 +6,10 @@ import pyperclip
 import qrcode
 
 from discovery import UDPDiscoveryEngine
-# IMPORT THE NEW CHUNKED TRANSFER ENGINE
 from transfer_engine import TesseraTransferEngine
+from sync_watcher import start_folder_sync_watcher
+# IMPORT THE SQLite TRANSACTION ENGINE
+from state_store import TesseraStateStore
 
 app = Flask(__name__, 
             template_folder='../templates', 
@@ -20,8 +22,9 @@ app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024
 os.makedirs(DROP_ZONE, exist_ok=True)
 
 discovery_node = None
-# Instantiate Global Variable pointer for our TCP stream service
 transfer_node = None
+sync_observer = None
+db_store = None # Database engine instantiator
 
 def get_local_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -38,8 +41,6 @@ def generate_terminal_qr(url):
     qr = qrcode.QRCode(version=1, box_size=1, border=1)
     qr.add_data(url)
     qr.make(fit=True)
-    
-    # Force printing with standard text characters instead of broken ANSI blocks
     qr.print_ascii(invert=True)
 
 @app.route('/')
@@ -50,7 +51,7 @@ def index():
 def update_clipboard():
     data = request.get_json()
     if not data or 'content' not in data:
-        return jsonify({'error': 'No text block content detected'}), 400
+        return jsonify({'error': 'No text content detected'}), 400
     try:
         pyperclip.copy(data['content'])
         print(f"\n📋 [Clipboard] Sync received from node: {request.remote_addr}")
@@ -64,11 +65,16 @@ def upload_file():
         return jsonify({'error': 'No file element detected in packet stream'}), 400
     file = request.files['file']
     if file.filename == '':
-        return jsonify({'error': 'Empty target filename string'}), 400
+        return jsonify({'error': 'Empty file parameters'}), 400
     if file:
         filename = secure_filename(file.filename)
         file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-        print(f"\n📥 [File Drop] Successfully saved file '{filename}' from address {request.remote_addr}")
+        
+        # Log HTTP uploads into the local SQLite database historical register
+        if db_store:
+            db_store.log_transfer(filename, 1, 'completed', request.remote_addr)
+            
+        print(f"\n📥 [File Drop] Saved file '{filename}' from address {request.remote_addr}")
         return jsonify({'status': 'success', 'message': f"Stored context as {filename}"})
 
 @app.route('/api/peers', methods=['GET'])
@@ -77,19 +83,28 @@ def get_discovered_peers():
         return jsonify(discovery_node.get_active_peers())
     return jsonify({})
 
-# NEW OUTBOUND TRIGGER ENDPOINT: Tells this PC to send a file to another PC via raw TCP sockets
+# NEW HISTORICAL ENDPOINT: Exposes recent database entries to the user front-end UI
+@app.route('/api/history', methods=['GET'])
+def get_sync_history():
+    if db_store:
+        return jsonify(db_store.get_transfer_history())
+    return jsonify([])
+
 @app.route('/api/send_peer', methods=['POST'])
 def send_file_to_peer():
     data = request.get_json()
     if not data or 'target_ip' not in data or 'file_path' not in data:
-        return jsonify({'error': 'Missing parameters target_ip or file_path'}), 400
+        return jsonify({'error': 'Missing targets'}), 400
     
     if transfer_node:
         success = transfer_node.send_file(data['target_ip'], data['file_path'])
         if success:
-            return jsonify({'status': 'success', 'message': f"Outbound stream initiated for {data['file_path']}"})
-        return jsonify({'error': 'File initialization engine error'}), 500
-    return jsonify({'error': 'Transfer backend node offline'}), 500
+            # Log structural network transmissions into our SQLite history tables
+            if db_store:
+                db_store.log_transfer(os.path.basename(data['file_path']), 0, 'completed', data['target_ip'])
+            return jsonify({'status': 'success', 'message': "Stream initiated"})
+        return jsonify({'error': 'Engine error'}), 500
+    return jsonify({'error': 'Node offline'}), 500
 
 if __name__ == '__main__':
     local_ip = get_local_ip()
@@ -97,14 +112,17 @@ if __name__ == '__main__':
     port = 5000
     server_url = f"http://{local_ip}:{port}"
     
-    # Initialize UDP discovery engines
+    # Initialize SQLite database file
+    db_store = TesseraStateStore()
+    
     discovery_node = UDPDiscoveryEngine(local_ip=local_ip, hostname=hostname)
     discovery_node.start_broadcaster()
     discovery_node.start_listener()
     
-    # Fire up the parallel high-speed TCP Socket stream layer
     transfer_node = TesseraTransferEngine(local_ip=local_ip)
     transfer_node.start_receiver_server()
+    
+    sync_observer = start_folder_sync_watcher(local_ip=local_ip)
     
     print("\n" + "═"*50)
     print(f" 🌟 TESSERA INTERFACE HOST: ACTIVE 🌟 ")
