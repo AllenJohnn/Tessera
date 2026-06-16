@@ -26,6 +26,9 @@ transfer_node = None
 sync_observer = None
 db_store = None 
 
+# Dynamic registry tracking mobile client pings
+HTTP_ACTIVE_DEVICES = {}
+
 def get_local_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
@@ -43,13 +46,56 @@ def generate_terminal_qr(url):
     qr.make(fit=True)
     qr.print_ascii(invert=True)
 
-# FIXED: Explicit cache-busting injection
 @app.route('/')
 def index():
     cache_buster = str(int(time.time()))
     return render_template('index.html', version=cache_buster)
 
-# FIXED: Added win32 clipboard API fail-safe override 
+@app.route('/api/ping', methods=['POST'])
+def register_device_ping():
+    data = request.get_json() or {}
+    user_agent = request.headers.get('User-Agent', '').lower()
+    
+    if "iphone" in user_agent or "android" in user_agent:
+        device_type = "Mobile Device"
+    elif "ipad" in user_agent:
+        device_type = "Tablet Client"
+    else:
+        device_type = "Web Workstation"
+        
+    client_ip = request.remote_addr
+    
+    HTTP_ACTIVE_DEVICES[client_ip] = {
+        "hostname": data.get("hostname", f"Satellite [{client_ip.split('.')[-1]}]"),
+        "type": device_type,
+        "last_seen": time.time()
+    }
+    return jsonify({"status": "acknowledged"})
+
+@app.route('/api/peers', methods=['GET'])
+def get_discovered_peers():
+    now = time.time()
+    unified_devices = {}
+    
+    if discovery_node:
+        for ip, data in discovery_node.get_active_peers().items():
+            unified_devices[ip] = {
+                "hostname": data.get("hostname", "Unknown PC"),
+                "type": "Desktop Core Node"
+            }
+            
+    for ip, data in list(HTTP_ACTIVE_DEVICES.items()):
+        if now - data["last_seen"] < 12:
+            if ip not in unified_devices:
+                unified_devices[ip] = {
+                    "hostname": data["hostname"],
+                    "type": data["type"]
+                }
+        else:
+            HTTP_ACTIVE_DEVICES.pop(ip, None)
+            
+    return jsonify(unified_devices)
+
 @app.route('/api/clipboard', methods=['POST'])
 def update_clipboard():
     data = request.get_json()
@@ -57,11 +103,8 @@ def update_clipboard():
         return jsonify({'error': 'No text content detected'}), 400
     try:
         text_content = data['content']
-        
-        # Fallback Chain 1: Pyperclip
         pyperclip.copy(text_content)
         
-        # Fallback Chain 2: Windows Win32 API handles native ring overrides
         try:
             import win32clipboard
             win32clipboard.OpenClipboard()
@@ -94,34 +137,10 @@ def upload_file():
         print(f"\n📥 [File Drop] Saved file '{filename}' from address {request.remote_addr}")
         return jsonify({'status': 'success', 'message': f"Stored context as {filename}"})
 
-@app.route('/api/peers', methods=['GET'])
-def get_discovered_peers():
-    if discovery_node:
-        return jsonify(discovery_node.get_active_peers())
-    return jsonify({})
-
-
-@app.route('/api/send_peer', methods=['POST'])
-def send_file_to_peer():
-    data = request.get_json()
-    if not data or 'target_ip' not in data or 'file_path' not in data:
-        return jsonify({'error': 'Missing targets'}), 400
-    
-    if transfer_node:
-        success = transfer_node.send_file(data['target_ip'], data['file_path'])
-        if success:
-            if db_store:
-                db_store.log_transfer(os.path.basename(data['file_path']), 0, 'completed', data['target_ip'])
-            return jsonify({'status': 'success', 'message': "Stream initiated"})
-        return jsonify({'error': 'Engine error'}), 500
-    return jsonify({'error': 'Node offline'}), 500
-
 @app.route('/api/files', methods=['GET'])
 def list_stored_files():
-    """Lists files inside the storage directory for mobile devices to download."""
     try:
         files = os.listdir(app.config['UPLOAD_FOLDER'])
-        # Return file names along with their file sizes
         file_data = []
         for f in files:
             file_path = os.path.join(app.config['UPLOAD_FOLDER'], f)
@@ -134,9 +153,23 @@ def list_stored_files():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# FIXED & ADDED: Storage directory cleaner router endpoint mapping
+@app.route('/api/clear_files', methods=['POST'])
+def clear_stored_files():
+    """Wipes all files inside the local storage directory cleanly."""
+    try:
+        files = os.listdir(app.config['UPLOAD_FOLDER'])
+        for f in files:
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], f)
+            if os.path.isfile(file_path):
+                os.remove(file_path)
+        print(f"\n🗑️ [Storage Purge] Directory wiped clear by request from: {request.remote_addr}")
+        return jsonify({"status": "success", "message": "Storage purged"})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/storage/<filename>', methods=['GET'])
 def download_file_direct(filename):
-    """Serves the actual file directly to the mobile browser."""
     from flask import send_from_directory
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename, as_attachment=True)
 

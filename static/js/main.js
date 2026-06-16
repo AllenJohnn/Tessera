@@ -10,10 +10,13 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const filesList = document.getElementById('files-list');
     const refreshFilesBtn = document.getElementById('refresh-files-btn');
+    const clearFilesBtn = document.getElementById('clear-files-btn'); // New element binding
     const nodeIpDisplay = document.getElementById('node-ip');
     const peersGrid = document.getElementById('peers-grid');
 
     let selectedPeerIp = null;
+
+    const dynamicDeviceName = (window.innerWidth < 640) ? "Mobile Phone" : "Laptop Client";
 
     if (nodeIpDisplay) {
         nodeIpDisplay.textContent = window.location.hostname;
@@ -32,7 +35,20 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 3000);
     }
 
-    // Subnet discovery mapping loop
+    // Ping background server registry
+    async function broadcastMobilePresence() {
+        try {
+            await fetch('/api/ping', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ "hostname": dynamicDeviceName })
+            });
+        } catch (err) {
+            console.error("Presence beacon dropped");
+        }
+    }
+
+    // Pull network map from endpoint cache
     async function queryLiveNetworkPeers() {
         try {
             const response = await fetch('/api/peers');
@@ -43,7 +59,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (peerEntries.length === 0) {
                 peersGrid.innerHTML = `
                     <div class="col-span-2 border border-[#1c1c1c] p-4 text-center bg-[#070707]">
-                        <p class="text-[10px] text-neutral-600 italic mono uppercase tracking-wider">NO REMOTE DASHBOARD WORKSTATIONS DETECTED</p>
+                        <p class="text-[10px] text-neutral-600 italic mono uppercase tracking-wider">NO DEVICES DETECTED</p>
                     </div>`;
                 selectedPeerIp = null;
                 return;
@@ -55,7 +71,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div data-ip="${ip}" class="peer-card border ${isSelected ? 'border-white bg-neutral-900/40' : 'border-[#1c1c1c] bg-[#070707]'} p-3.5 cursor-pointer hover:border-neutral-500 transition duration-100 flex items-center justify-between">
                         <div class="truncate">
                             <p class="text-xs font-semibold tracking-tight truncate ${isSelected ? 'text-white' : 'text-neutral-400'}">${data.hostname}</p>
-                            <p class="text-[10px] text-neutral-600 mono mt-1">${ip}</p>
+                            <p class="text-[10px] text-neutral-600 mono mt-1">${ip} // ${data.type.toUpperCase()}</p>
                         </div>
                         <div class="h-2 w-2 rounded-none border ${isSelected ? 'bg-white border-white' : 'border-neutral-800'} shrink-0"></div>
                     </div>
@@ -67,7 +83,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const targetIp = card.getAttribute('data-ip');
                     selectedPeerIp = (selectedPeerIp === targetIp) ? null : targetIp;
                     queryLiveNetworkPeers();
-                    showToast(selectedPeerIp ? `route locked: ${selectedPeerIp}` : 'route channel fallback: default storage');
+                    showToast(selectedPeerIp ? `route locked: ${selectedPeerIp}` : 'route: local storage');
                 });
             });
         } catch (err) {
@@ -75,7 +91,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Polished System Shared Ledger List Engine
+    // Pull direct local workspace storage indices
     async function loadAvailableFiles() {
         try {
             const response = await fetch('/api/files');
@@ -83,7 +99,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const files = await response.json();
             
             if (files.length === 0) {
-                filesList.innerHTML = `<p class="text-[10px] text-neutral-600 italic py-3 uppercase tracking-wider">LEDGER POOL EMPTY</p>`;
+                filesList.innerHTML = `<p class="text-[10px] text-neutral-600 italic py-3 uppercase tracking-wider">HISTORY EMPTY</p>`;
                 return;
             }
 
@@ -101,13 +117,28 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // ADDED: Clear action dispatcher pipeline hook
+    clearFilesBtn.addEventListener('click', async () => {
+        if (!confirm("CONFIRM COMMAND: PURGE ALL FILES INSIDE REPOSITORY HISTORIES?")) return;
+        try {
+            const response = await fetch('/api/clear_files', { method: 'POST' });
+            if (response.ok) {
+                showToast('storage wiped clean');
+                loadAvailableFiles();
+            } else {
+                showToast('clear execution failed', true);
+            }
+        } catch (err) {
+            showToast('communication exception', true);
+        }
+    });
+
     refreshFilesBtn.addEventListener('click', loadAvailableFiles);
 
-    // Text sync payload submission pipeline
     syncTextBtn.addEventListener('click', async (e) => {
         e.preventDefault(); 
         const content = clipboardInput.value.trim();
-        if (!content) return showToast('Buffer string argument empty.', true);
+        if (!content) return showToast('Buffer input empty.', true);
 
         try {
             const response = await fetch('/api/clipboard', {
@@ -116,10 +147,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify({ content })
             });
             if (response.ok) {
-                showToast('system clipboard injected');
+                showToast('clipboard updated');
                 clipboardInput.value = '';
             } else {
-                showToast('sync channel faulted', true);
+                showToast('sync channel fault', true);
             }
         } catch (err) {
             showToast('communication error', true);
@@ -136,7 +167,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function handleFileUpload(file) {
         if (selectedPeerIp) {
             progressContainer.classList.remove('hidden');
-            statusText.textContent = `PUSHING DATASTREAM PACKETS TO SOCKET...`;
+            statusText.textContent = `SENDING DATA CHUNKS OVER RAW SOCKETS...`;
             progressBar.style.width = '100%';
             progressPercent.textContent = 'SOCKET';
 
@@ -164,7 +195,7 @@ document.addEventListener('DOMContentLoaded', () => {
         formData.append('file', file);
 
         progressContainer.classList.remove('hidden');
-        statusText.textContent = "WRITING FILE SECTOR ENCODINGS TO HOST STORAGE...";
+        statusText.textContent = "UPLOADING FILE BLOCKS TO SYSTEM DISK...";
         progressBar.style.width = '0%';
         progressPercent.textContent = '0%';
 
@@ -181,7 +212,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         clientRequest.onload = () => {
             if (clientRequest.status === 200) {
-                showToast('binary drop complete');
+                showToast('transfer complete');
                 statusText.textContent = "COMPLETE";
                 loadAvailableFiles();
             } else {
@@ -193,7 +224,16 @@ document.addEventListener('DOMContentLoaded', () => {
         clientRequest.send(formData);
     }
 
-    loadAvailableFiles();
-    queryLiveNetworkPeers();
-    setInterval(queryLiveNetworkPeers, 5000);
+    // FIXED IMEDIATE EXECUTION RUNTIMES: Fires ping + fetch immediately to remove latency
+    async function initTessera() {
+        await broadcastMobilePresence(); // Register instantly
+        await queryLiveNetworkPeers();   // Load data matrix instantly
+        await loadAvailableFiles();      // Fetch list instantly
+        
+        // Fallback polling interval clocks setup afterward
+        setInterval(broadcastMobilePresence, 4000);
+        setInterval(queryLiveNetworkPeers, 4000);
+    }
+
+    initTessera();
 });
