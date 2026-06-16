@@ -11,11 +11,16 @@ from transfer_engine import TesseraTransferEngine
 from sync_watcher import start_folder_sync_watcher
 from state_store import TesseraStateStore
 
-app = Flask(__name__, 
-            template_folder='../templates', 
-            static_folder='../static')
+# FIXED: Dynamic path resolution layers to guarantee 100% cloud container compatibility
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+TEMPLATE_DIR = os.path.abspath(os.path.join(BASE_DIR, '../templates'))
+STATIC_DIR = os.path.abspath(os.path.join(BASE_DIR, '../static'))
+DROP_ZONE = os.path.abspath(os.path.join(BASE_DIR, '../storage'))
 
-DROP_ZONE = os.path.abspath(os.path.join(os.path.dirname(__file__), '../storage'))
+app = Flask(__name__, 
+            template_folder=TEMPLATE_DIR, 
+            static_folder=STATIC_DIR)
+
 app.config['UPLOAD_FOLDER'] = DROP_ZONE
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024
 
@@ -153,7 +158,6 @@ def list_stored_files():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# FIXED & ADDED: Storage directory cleaner router endpoint mapping
 @app.route('/api/clear_files', methods=['POST'])
 def clear_stored_files():
     """Wipes all files inside the local storage directory cleanly."""
