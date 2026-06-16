@@ -2,6 +2,7 @@ import os
 import socket
 import time
 import threading
+import random
 from flask import Flask, render_template, request, jsonify
 from werkzeug.utils import secure_filename
 import pyperclip
@@ -36,7 +37,10 @@ db_store = None
 HTTP_ACTIVE_DEVICES = {}
 
 # Central memory cache for headless environment clips
-WEB_CLIPBOARD_CACHE = {"content": "", "timestamp": 0}
+WEB_CLIPBOARD_CACHE = {"content": "", "sender": "SYSTEM", "timestamp": 0}
+
+# Curated prefix list for generating frictionless, brutalist fallbacks
+BRUTALIST_PREFIXES = ["CORE", "NODE", "SATELLITE", "PHANTOM", "MATRIX", "VECTOR", "ALPHA", "SPECTRE"]
 
 def get_local_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -65,6 +69,20 @@ def register_device_ping():
     data = request.get_json() or {}
     user_agent = request.headers.get('User-Agent', '').lower()
     
+    # Extract the true external client IP behind the cloud proxy layer
+    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
+    
+    # FIXED: Check if the client already has a known identity, or generate a zero-friction fallback
+    assigned_hostname = data.get("hostname")
+    if not assigned_hostname:
+        # Check if we already assigned them a name previously to avoid rapid cycling
+        if client_ip in HTTP_ACTIVE_DEVICES:
+            assigned_hostname = HTTP_ACTIVE_DEVICES[client_ip]["hostname"]
+        else:
+            random_id = random.randint(100, 999)
+            random_prefix = random.choice(BRUTALIST_PREFIXES)
+            assigned_hostname = f"{random_prefix}-{random_id}"
+    
     if "iphone" in user_agent or "android" in user_agent:
         device_type = "Mobile Device"
     elif "ipad" in user_agent:
@@ -72,15 +90,14 @@ def register_device_ping():
     else:
         device_type = "Web Workstation"
         
-    # FIXED: Extract the true external client IP behind the cloud proxy layer
-    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
-    
     HTTP_ACTIVE_DEVICES[client_ip] = {
-        "hostname": data.get("hostname", f"Satellite [{client_ip.split('.')[-1]}]"),
+        "hostname": assigned_hostname,
         "type": device_type,
         "last_seen": time.time()
     }
-    return jsonify({"status": "acknowledged"})
+    
+    # Return the callsign back to frontend so it can synchronize local memory stores
+    return jsonify({"status": "acknowledged", "assigned_name": assigned_hostname})
 
 @app.route('/api/peers', methods=['GET'])
 def get_discovered_peers():
@@ -114,11 +131,18 @@ def update_clipboard():
         return jsonify({'error': 'No text content detected'}), 400
         
     text_content = data['content']
-    
-    # FIXED: Extract proxy IP for reliable cross-network identification
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
     
-    WEB_CLIPBOARD_CACHE = {"content": text_content, "timestamp": time.time()}
+    # FIXED: Extract sender identity from live tracking registry maps
+    device_info = HTTP_ACTIVE_DEVICES.get(client_ip, {})
+    sender_name = device_info.get('hostname', f"NODE [{client_ip.split('.')[-1]}]")
+    
+    # Pack the payload bundled explicitly with its creator signature tag
+    WEB_CLIPBOARD_CACHE = {
+        "content": text_content,
+        "sender": sender_name,
+        "timestamp": time.time()
+    }
     
     try:
         pyperclip.copy(text_content)
@@ -130,13 +154,12 @@ def update_clipboard():
             win32clipboard.CloseClipboard()
         except ImportError:
             pass
-        print(f"\n📋 [Clipboard] Direct hardware sync completed from node: {client_ip}")
+        print(f"\n📋 [Clipboard] Direct hardware sync completed from node: {sender_name}")
     except Exception:
-        print(f"\n☁️ [Cloud Clipboard] Text cached successfully in memory for client: {client_ip}")
+        print(f"\n☁️ [Cloud Clipboard] Text cached successfully from: {sender_name}")
 
     return jsonify({'status': 'success', 'message': 'Clipboard Updated!'})
 
-# ADDED ENDPOINT: Serves the latest text string cache to the frontend stream container
 @app.route('/api/clipboard/get', methods=['GET'])
 def get_cached_clipboard():
     """Allows client instances to pull the latest text block from memory."""
@@ -177,15 +200,23 @@ def upload_file():
     file = request.files['file']
     if file.filename == '':
         return jsonify({'error': 'Empty file parameters'}), 400
+        
     if file:
-        filename = secure_filename(file.filename)
-        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+        client_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
+        device_info = HTTP_ACTIVE_DEVICES.get(client_ip, {})
+        sender_name = device_info.get('hostname', f"NODE-{client_ip.split('.')[-1]}").replace(" ", "_").upper()
+        
+        # FIXED: Append structural sender initials onto file descriptors to clear multi-device overlap
+        raw_filename = secure_filename(file.filename)
+        stamped_filename = f"{sender_name}_{raw_filename}"
+        
+        file.save(os.path.join(app.config['UPLOAD_FOLDER'], stamped_filename))
         
         if db_store:
-            db_store.log_transfer(filename, 1, 'completed', request.remote_addr)
+            db_store.log_transfer(stamped_filename, 1, 'completed', client_ip)
             
-        print(f"\n📥 [File Drop] Saved file '{filename}' from address {request.remote_addr}")
-        return jsonify({'status': 'success', 'message': f"Stored context as {filename}"})
+        print(f"\n📥 [File Drop] Saved file '{stamped_filename}' from address {client_ip}")
+        return jsonify({'status': 'success', 'message': f"Stored context as {stamped_filename}"})
 
 @app.route('/api/files', methods=['GET'])
 def list_stored_files():
@@ -211,7 +242,7 @@ def clear_stored_files():
             file_path = os.path.join(app.config['UPLOAD_FOLDER'], f)
             if os.path.isfile(file_path):
                 os.remove(file_path)
-        print(f"\n🗑️ [Storage Purge] Directory wiped clear by: {request.remote_addr}")
+        print(f"\n🗑️ [Storage Purge] Directory wiped clear by request.")
         return jsonify({"status": "success", "message": "Storage purged"})
     except Exception as e:
         return jsonify({'error': str(e)}), 500

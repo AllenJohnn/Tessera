@@ -27,8 +27,13 @@
             <div class="h-1.5 w-1.5 bg-white animate-pulse"></div>
             <h1 class="text-xs font-semibold tracking-widest uppercase mono">tessera</h1>
         </div>
-        <div class="text-[10px] mono text-neutral-400 flex flex-wrap gap-x-6 gap-y-1 w-full sm:w-auto justify-between sm:justify-end">
-            <div>NODE // <span class="text-white font-medium">LOQ</span></div>
+        
+        <div class="text-[10px] mono text-neutral-400 flex flex-wrap gap-x-6 gap-y-1 w-full sm:w-auto justify-between sm:justify-end items-center">
+            <div class="flex items-center gap-1.5">
+                <span>STATION //</span>
+                <span class="text-white font-medium uppercase tracking-wider" id="display-name">SYNCING...</span>
+                <button type="button" id="edit-name-btn" class="text-[8px] tracking-widest text-neutral-600 hover:text-white border border-neutral-900 hover:border-neutral-500 px-1 py-0.5 uppercase cursor-pointer select-none transition ml-1 font-semibold">[EDIT]</button>
+            </div>
             <div>ADDR // <span class="text-white font-medium" id="node-ip">tessera-lo78.onrender.com</span></div>
         </div>
     </header>
