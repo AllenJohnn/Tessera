@@ -38,6 +38,40 @@ WEB_CLIPBOARD_SLOTS = {
 
 BRUTALIST_PREFIXES = ["CORE", "NODE", "SATELLITE", "PHANTOM", "MATRIX", "VECTOR", "ALPHA", "SPECTRE"]
 
+# Helper to fetch local IP address
+def get_local_ip():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(('10.255.255.255', 1))
+        IP = s.getsockname()[0]
+    except Exception:
+        IP = '127.0.0.1'
+    finally:
+        s.close()
+    return IP
+
+LOCAL_IP = get_local_ip()
+
+# Node engine integrations
+from discovery import UDPDiscoveryEngine
+from transfer_engine import TesseraTransferEngine
+from sync_watcher import start_folder_sync_watcher
+
+SERVER_HOSTNAME = f"{random.choice(BRUTALIST_PREFIXES)}_{random.randint(100, 999)}"
+
+discovery_node = UDPDiscoveryEngine(LOCAL_IP, SERVER_HOSTNAME)
+discovery_node.start_broadcaster()
+discovery_node.start_listener()
+
+transfer_node = TesseraTransferEngine(LOCAL_IP)
+transfer_node.start_receiver_server()
+
+try:
+    sync_observer = start_folder_sync_watcher(LOCAL_IP)
+except Exception as e:
+    print(f"⚠️ [Sync Watcher Warning] Failed to start folder watch: {e}")
+    sync_observer = None
+
 def run_storage_lifecycle_guard():
     while True:
         try:
@@ -102,6 +136,8 @@ def register_device_ping():
 def get_discovered_peers():
     now = time.time()
     unified_devices = {}
+    
+    # 1. Get HTTP active devices
     for dev_id, data in list(HTTP_ACTIVE_DEVICES.items()):
         if now - data["last_seen"] < 12:
             unified_devices[dev_id] = {
@@ -112,6 +148,20 @@ def get_discovered_peers():
             }
         else:
             HTTP_ACTIVE_DEVICES.pop(dev_id, None)
+            
+    # 2. Add local network peers discovered via UDP broadcast
+    if discovery_node:
+        udp_peers = discovery_node.get_active_peers()
+        for peer_ip, data in udp_peers.items():
+            peer_dev_id = f"udp_{peer_ip.replace('.', '_')}"
+            if peer_dev_id not in unified_devices:
+                unified_devices[peer_dev_id] = {
+                    "hostname": data["hostname"],
+                    "type": "Network Workstation",
+                    "last_seen": now,
+                    "ip": peer_ip
+                }
+                
     return jsonify(unified_devices)
 
 @app.route('/api/clipboard', methods=['POST'])
@@ -178,6 +228,62 @@ def upload_file():
         
         file.save(os.path.join(app.config['UPLOAD_FOLDER'], stamped_filename))
         return jsonify({'status': 'success'})
+
+@app.route('/api/send_peer', methods=['POST'])
+def send_file_to_peer():
+    if 'file' not in request.files: return jsonify({'error': 'No element'}), 400
+    file = request.files['file']
+    if file.filename == '': return jsonify({'error': 'Empty parameters'}), 400
+    
+    # SECURITY ENHANCEMENT: Enforce extension constraints validation check
+    if not allowed_file(file.filename):
+        return jsonify({'error': 'Execution blocked: File extension type unauthorized.'}), 403
+        
+    target_peer = request.form.get('target_peer')
+    if not target_peer:
+        return jsonify({'error': 'No target peer specified'}), 400
+        
+    # Resolve target IP
+    target_ip = None
+    if target_peer.startswith("udp_"):
+        target_ip = target_peer[4:].replace("_", ".")
+    else:
+        if target_peer in HTTP_ACTIVE_DEVICES:
+            target_ip = HTTP_ACTIVE_DEVICES[target_peer].get("ip")
+            
+    if not target_ip:
+        try:
+            socket.inet_aton(target_peer)
+            target_ip = target_peer
+        except socket.error:
+            return jsonify({'error': f'Could not resolve peer: {target_peer}'}), 400
+            
+    # Save file locally in a temp folder first to preserve the original filename
+    raw_filename = secure_filename(file.filename)
+    temp_dir = os.path.join(app.config['UPLOAD_FOLDER'], f"temp_{int(time.time())}")
+    os.makedirs(temp_dir, exist_ok=True)
+    temp_path = os.path.join(temp_dir, raw_filename)
+    file.save(temp_path)
+    
+    def async_send():
+        try:
+            success = transfer_node.send_file(target_ip, temp_path)
+            if success:
+                print(f"[Async Send] File transfer to {target_ip} completed.")
+            else:
+                print(f"[Async Send] File transfer to {target_ip} failed.")
+        except Exception as e:
+            print(f"[Async Send] Exception in async file transfer: {e}")
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            try:
+                os.rmdir(temp_dir)
+            except Exception:
+                pass
+                
+    threading.Thread(target=async_send, daemon=True).start()
+    return jsonify({'status': 'success', 'message': f'File transfer to {target_ip} initiated.'})
 
 @app.route('/api/files', methods=['GET'])
 def list_stored_files():

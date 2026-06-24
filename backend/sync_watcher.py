@@ -34,18 +34,18 @@ class TesseraFolderHandler(FileSystemEventHandler):
         if not os.path.exists(src_path) or os.path.getsize(src_path) == 0:
             return
 
-        print(f"🔄 [Sync Watcher] Active system mutation detected on file: {filename}")
+        print(f"[Sync Watcher] Active system mutation detected on file: {filename}")
         
         # Access global server memory variables to locate network peer maps
         from server import discovery_node, transfer_node
         if discovery_node and transfer_node:
             active_peers = discovery_node.get_active_peers()
             if not active_peers:
-                print("ℹ️ [Sync Watcher] File changed locally, but no desktop network peers are active.")
+                print("[Sync Watcher] File changed locally, but no desktop network peers are active.")
                 return
 
             for peer_ip in active_peers.keys():
-                print(f"🚀 [Auto Sync] Routing copy of '{filename}' directly down mesh line to: {peer_ip}")
+                print(f"[Auto Sync] Routing copy of '{filename}' directly down mesh line to: {peer_ip}")
                 # Spin off execution into independent threads to keep filesystem monitoring non-blocking
                 threading.Thread(
                     target=transfer_node.send_file, 

@@ -20,11 +20,40 @@ document.addEventListener('DOMContentLoaded', () => {
     let selectedPeerIp = null;
     let activeChannelSlot = "SLOT_01";
     let channelTimestamps = { "SLOT_01": 0, "SLOT_02": 0, "SLOT_03": 0 };
-    let sessionCallsign = localStorage.getItem('tessera_callsign') || "";
-    let sessionDeviceId = localStorage.getItem('tessera_device_id') || "";
+    let sessionCallsign = "";
+    let sessionDeviceId = "";
+
+    const safeStorage = {
+        getItem: (key) => {
+            try {
+                return localStorage.getItem(key);
+            } catch (e) {
+                console.warn(`Failed to read from localStorage: ${e}`);
+                return null;
+            }
+        },
+        setItem: (key, value) => {
+            try {
+                localStorage.setItem(key, value);
+            } catch (e) {
+                console.warn(`Failed to write to localStorage: ${e}`);
+            }
+        }
+    };
+
+    sessionCallsign = safeStorage.getItem('tessera_callsign') || "";
+    sessionDeviceId = safeStorage.getItem('tessera_device_id') || "";
+
+    if (sessionDeviceId === "null" || sessionDeviceId === "undefined") {
+        sessionDeviceId = "";
+    }
+    if (sessionCallsign === "null" || sessionCallsign === "undefined") {
+        sessionCallsign = "";
+    }
+
     if (!sessionDeviceId) {
         sessionDeviceId = 'dev_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-        localStorage.setItem('tessera_device_id', sessionDeviceId);
+        safeStorage.setItem('tessera_device_id', sessionDeviceId);
     }
 
     // SECURITY ENHANCEMENT: Enforce strict HTML entity sanitization context to completely neutralize XSS payloads
@@ -91,11 +120,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 const data = await response.json();
                 if (data.device_id && !sessionDeviceId) {
                     sessionDeviceId = data.device_id;
-                    localStorage.setItem('tessera_device_id', sessionDeviceId);
+                    safeStorage.setItem('tessera_device_id', sessionDeviceId);
                 }
                 if (!sessionCallsign && data.assigned_name) {
                     sessionCallsign = data.assigned_name;
-                    localStorage.setItem('tessera_callsign', sessionCallsign);
+                    safeStorage.setItem('tessera_callsign', sessionCallsign);
                 }
                 if (displayNameField) displayNameField.textContent = escapeHTML(sessionCallsign);
             }
@@ -117,11 +146,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
             peersGrid.innerHTML = peerEntries.map(([devId, data]) => {
                 const isSelected = selectedPeerIp === devId;
-                const isLiveNow = (Date.now() / 1000) - data.last_seen < 12;
                 const nodeLabel = `// ${escapeHTML(data.hostname).toUpperCase()}`;
-                const statusLabel = isLiveNow ? 'ONLINE' : 'OFFLINE';
-                const statusColor = isLiveNow ? 'text-emerald-400' : 'text-amber-600';
-                const indicatorDot = isLiveNow ? `<span class="h-1 w-1 bg-emerald-400 rounded-full shadow-[0_0_8px_#10b981]"></span>` : `<span class="h-1 w-1 bg-amber-600 rounded-full"></span>`;
+                const statusLabel = 'ONLINE';
+                const statusColor = 'text-emerald-400';
+                const indicatorDot = `<span class="h-1 w-1 bg-emerald-400 rounded-full shadow-[0_0_8px_#10b981]"></span>`;
 
                 return `
                     <div data-id="${devId}" class="peer-card border ${isSelected ? 'border-white bg-neutral-900/40' : 'border-neutral-900 bg-[#070707]'} p-3 flex justify-between items-center rounded-none select-none cursor-pointer hover:border-neutral-500 transition duration-100">
@@ -224,7 +252,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
                 sessionCallsign = sanitizedInput;
-                localStorage.setItem('tessera_callsign', sessionCallsign);
+                safeStorage.setItem('tessera_callsign', sessionCallsign);
                 if (displayNameField) displayNameField.textContent = escapeHTML(sessionCallsign);
                 showToast(`callsign assigned: ${sessionCallsign}`);
                 broadcastMobilePresence(); 
@@ -291,24 +319,43 @@ document.addEventListener('DOMContentLoaded', () => {
         if (selectedPeerIp) {
             progressContainer.classList.remove('hidden');
             statusText.textContent = `SENDING CHUNKS VIA RAW SOCKET PIPELINES...`;
-            progressBar.style.width = '100%';
-            progressPercent.textContent = 'SOCKET';
+            progressBar.style.width = '0%';
+            progressPercent.textContent = '0%';
 
-            fetch('/api/send_peer', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ "target_ip": selectedPeerIp, "target_device_id": selectedPeerIp, "file_path": file.name })
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.status === 'success') {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('device_id', sessionDeviceId);
+            formData.append('target_peer', selectedPeerIp);
+
+            const clientRequest = new XMLHttpRequest();
+            clientRequest.open('POST', '/api/send_peer', true);
+
+            clientRequest.upload.addEventListener('progress', (e) => {
+                if (e.lengthComputable) {
+                    const percent = Math.round((e.loaded / e.total) * 100);
+                    statusText.textContent = `SENDING... ${compileBrutalistProgressBar(percent)}`;
+                    progressBar.style.width = `${percent}%`;
+                    progressPercent.textContent = `${percent}%`;
+                }
+            });
+
+            clientRequest.onload = () => {
+                if (clientRequest.status === 200) {
                     flashSectionBorder('file-transfer-section');
                     statusText.textContent = "COMPLETE";
-                } else { showToast('socket stream aborted', true); }
+                    loadAvailableFiles();
+                } else {
+                    let errorMessage = 'peer stream error';
+                    try {
+                        const responseData = JSON.parse(clientRequest.responseText || '{}');
+                        errorMessage = responseData.error || errorMessage;
+                    } catch (e) {}
+                    showToast(errorMessage, true);
+                }
                 setTimeout(() => progressContainer.classList.add('hidden'), 2000);
-                loadAvailableFiles();
-            });
-            fileElement.value = '';
+                fileElement.value = ''; 
+            };
+            clientRequest.send(formData);
             return;
         }
 
@@ -339,8 +386,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 statusText.textContent = "COMPLETE";
                 loadAvailableFiles();
             } else {
-                const responseData = JSON.parse(clientRequest.responseText || '{}');
-                showToast(responseData.error || 'pipeline channel crash', true);
+                let errorMessage = 'pipeline channel crash';
+                try {
+                    const responseData = JSON.parse(clientRequest.responseText || '{}');
+                    errorMessage = responseData.error || errorMessage;
+                } catch (e) {}
+                showToast(errorMessage, true);
             }
             setTimeout(() => progressContainer.classList.add('hidden'), 2000);
             fileElement.value = ''; 

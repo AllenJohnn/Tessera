@@ -75,7 +75,7 @@ class UDPDiscoveryEngine:
                 
                 with self.lock:
                     if sender_ip not in self.peer_registry:
-                        print(f"\n✨ [Peer Discovered] Managed node '{payload['hostname']}' registered at {sender_ip}")
+                        print(f"\n[Peer Discovered] Managed node '{payload['hostname']}' registered at {sender_ip}")
                     
                     # Store data tracking structure and map timestamp
                     self.peer_registry[sender_ip] = {
@@ -97,7 +97,7 @@ class UDPDiscoveryEngine:
             stale_nodes = [ip for ip, data in self.peer_registry.items() 
                            if current_time - data['last_seen'] > self.stale_timeout]
             for ip in stale_nodes:
-                print(f"\n🍂 [Peer Dropped] Connection to host '{self.peer_registry[ip]['hostname']}' timed out.")
+                print(f"\n[Peer Dropped] Connection to host '{self.peer_registry[ip]['hostname']}' timed out.")
                 del self.peer_registry[ip]
                 
             return {ip: {"hostname": d["hostname"], "port": d["port"]} for ip, d in self.peer_registry.items()}

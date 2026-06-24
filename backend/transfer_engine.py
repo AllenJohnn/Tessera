@@ -29,7 +29,7 @@ class TesseraTransferEngine:
                 handler = threading.Thread(target=self._handle_incoming_stream, args=(client_sock, client_addr))
                 handler.start()
             except Exception as e:
-                print(f"❌ [TCP Server Error] Connection dropped: {e}")
+                print(f"[TCP Server Error] Connection dropped: {e}")
 
     def _handle_incoming_stream(self, sock, addr):
         """Processes the Tessera packet frame and manages chunk accumulation."""
@@ -55,7 +55,7 @@ class TesseraTransferEngine:
                 if current_offset > 0:
                     f.seek(current_offset)
                 
-                print(f"📥 [TCP Receiver] Ingesting '{filename}' from {addr[0]} starting at byte {current_offset}")
+                print(f"[TCP Receiver] Ingesting '{filename}' from {addr[0]} starting at byte {current_offset}")
                 
                 while True:
                     data = sock.recv(self.chunk_size)
@@ -68,17 +68,17 @@ class TesseraTransferEngine:
                 if os.path.exists(final_path):
                     os.remove(final_path)
                 os.rename(part_path, final_path)
-                print(f"✨ [TCP Stream Finalized] Verified and stored: {filename}")
+                print(f"[TCP Stream Finalized] Verified and stored: {filename}")
                 
         except Exception as e:
-            print(f"❌ [TCP Receive Fault] Stream pipeline crash: {e}")
+            print(f"[TCP Receive Fault] Stream pipeline crash: {e}")
         finally:
             sock.close()
 
     def send_file(self, target_ip, file_path):
         """Initiates a high-throughput TCP connection to a peer workstation node."""
         if not os.path.exists(file_path):
-            print(f"❌ [TCP Sender Error] Source file missing: {file_path}")
+            print(f"[TCP Sender Error] Source file missing: {file_path}")
             return False
 
         try:
@@ -99,7 +99,7 @@ class TesseraTransferEngine:
             start_offset = int(offset_response) if offset_response else 0
 
             # 3. Chunked Streaming Phase
-            print(f"📤 [TCP Sender] Streaming '{filename}' to {target_ip} from byte offset {start_offset}")
+            print(f"[TCP Sender] Streaming '{filename}' to {target_ip} from byte offset {start_offset}")
             with open(file_path, 'rb') as f:
                 f.seek(start_offset)
                 while True:
@@ -111,5 +111,5 @@ class TesseraTransferEngine:
             sock.close()
             return True
         except Exception as e:
-            print(f"❌ [TCP Send Fault] Failed to stream to remote target {target_ip}: {e}")
+            print(f"[TCP Send Fault] Failed to stream to remote target {target_ip}: {e}")
             return False
