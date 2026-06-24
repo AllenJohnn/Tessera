@@ -2,6 +2,7 @@ import os
 import socket
 import json
 import threading
+from werkzeug.utils import secure_filename
 
 class TesseraTransferEngine:
     def __init__(self, local_ip, port=6000, storage_dir='../storage'):
@@ -43,7 +44,17 @@ class TesseraTransferEngine:
             filename = header_data['filename']
             total_size = header_data['total_size']
             
-            final_path = os.path.join(self.storage_dir, filename)
+            # SECURITY ENHANCEMENT: Sanitize filename to block path traversal write exploits
+            clean_filename = secure_filename(filename)
+            
+            # SECURITY ENHANCEMENT: Whitelist validation check to prevent arbitrary execution files
+            ALLOWED_EXTENSIONS = {'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'zip', 'rar', 'mp4', 'mp3', 'json', 'apk'}
+            ext = clean_filename.rsplit('.', 1)[1].lower() if '.' in clean_filename else ''
+            if ext not in ALLOWED_EXTENSIONS:
+                print(f"[TCP Receiver Error] Blocked unauthorized file type: {clean_filename}")
+                return
+                
+            final_path = os.path.join(self.storage_dir, clean_filename)
             part_path = final_path + ".part"
 
             # 2. Handshake Phase: Send current write-offset back to sender

@@ -23,6 +23,13 @@ class TesseraFolderHandler(FileSystemEventHandler):
     def _process_sync_event(self, src_path):
         filename = os.path.basename(src_path)
         
+        # Whitelist validation check to prevent arbitrary execution files
+        ALLOWED_EXTENSIONS = {'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'zip', 'rar', 'mp4', 'mp3', 'json', 'apk'}
+        ext = filename.rsplit('.', 1)[1].lower() if '.' in filename else ''
+        if ext not in ALLOWED_EXTENSIONS:
+            print(f"[Sync Watcher Warning] Blocked auto-syncing unauthorized file type: {filename}")
+            return
+            
         # Debounce multiple consecutive kernel mod ticks
         now = time.time()
         if filename in self.last_triggered and now - self.last_triggered[filename] < 2:

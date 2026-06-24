@@ -246,7 +246,12 @@ def send_file_to_peer():
     # Resolve target IP
     target_ip = None
     if target_peer.startswith("udp_"):
-        target_ip = target_peer[4:].replace("_", ".")
+        raw_ip = target_peer[4:].replace("_", ".")
+        try:
+            socket.inet_aton(raw_ip)
+            target_ip = raw_ip
+        except socket.error:
+            pass
     else:
         if target_peer in HTTP_ACTIVE_DEVICES:
             target_ip = HTTP_ACTIVE_DEVICES[target_peer].get("ip")
@@ -256,7 +261,7 @@ def send_file_to_peer():
             socket.inet_aton(target_peer)
             target_ip = target_peer
         except socket.error:
-            return jsonify({'error': f'Could not resolve peer: {target_peer}'}), 400
+            return jsonify({'error': f'Could not resolve peer IP: {target_peer}'}), 400
             
     # Save file locally in a temp folder first to preserve the original filename
     raw_filename = secure_filename(file.filename)

@@ -136,7 +136,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('/api/peers');
             if (!response.ok) return;
             const peers = await response.json();
-            const peerEntries = Object.entries(peers).filter(([devId]) => devId !== sessionDeviceId);
+            const peerEntries = Object.entries(peers);
             
             if (peerEntries.length === 0) {
                 peersGrid.innerHTML = `<div class="col-span-1 sm:col-span-2 border border-neutral-900 p-4 text-center bg-[#070707] w-full"><p class="text-[10px] text-neutral-600 uppercase tracking-wider mono">WAITING FOR PEER DEVICES...</p></div>`;
@@ -146,7 +146,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             peersGrid.innerHTML = peerEntries.map(([devId, data]) => {
                 const isSelected = selectedPeerIp === devId;
-                const nodeLabel = `// ${escapeHTML(data.hostname).toUpperCase()}`;
+                const isSelf = devId === sessionDeviceId;
+                const nodeLabel = `// ${escapeHTML(data.hostname).toUpperCase()}${isSelf ? ' [YOU]' : ''}`;
                 const statusLabel = 'ONLINE';
                 const statusColor = 'text-emerald-400';
                 const indicatorDot = `<span class="h-1 w-1 bg-emerald-400 rounded-full shadow-[0_0_8px_#10b981]"></span>`;
@@ -164,6 +165,10 @@ document.addEventListener('DOMContentLoaded', () => {
             document.querySelectorAll('.peer-card').forEach(card => {
                 card.addEventListener('click', () => {
                     const targetId = card.getAttribute('data-id');
+                    if (targetId === sessionDeviceId) {
+                        showToast("cannot route files to self", true);
+                        return;
+                    }
                     selectedPeerIp = (selectedPeerIp === targetId) ? null : targetId;
                     queryLiveNetworkPeers();
                     showToast(selectedPeerIp ? `route locked: ${selectedPeerIp}` : 'route: local storage');
