@@ -21,6 +21,11 @@ document.addEventListener('DOMContentLoaded', () => {
     let activeChannelSlot = "SLOT_01";
     let channelTimestamps = { "SLOT_01": 0, "SLOT_02": 0, "SLOT_03": 0 };
     let sessionCallsign = localStorage.getItem('tessera_callsign') || "";
+    let sessionDeviceId = localStorage.getItem('tessera_device_id') || "";
+    if (!sessionDeviceId) {
+        sessionDeviceId = 'dev_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+        localStorage.setItem('tessera_device_id', sessionDeviceId);
+    }
 
     // SECURITY ENHANCEMENT: Enforce strict HTML entity sanitization context to completely neutralize XSS payloads
     function escapeHTML(str) {
@@ -80,10 +85,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('/api/ping', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ "hostname": sessionCallsign })
+                body: JSON.stringify({ "hostname": sessionCallsign, "device_id": sessionDeviceId })
             });
             if (response.ok) {
                 const data = await response.json();
+                if (data.device_id && !sessionDeviceId) {
+                    sessionDeviceId = data.device_id;
+                    localStorage.setItem('tessera_device_id', sessionDeviceId);
+                }
                 if (!sessionCallsign && data.assigned_name) {
                     sessionCallsign = data.assigned_name;
                     localStorage.setItem('tessera_callsign', sessionCallsign);
@@ -98,7 +107,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('/api/peers');
             if (!response.ok) return;
             const peers = await response.json();
-            const peerEntries = Object.entries(peers);
+            const peerEntries = Object.entries(peers).filter(([devId]) => devId !== sessionDeviceId);
             
             if (peerEntries.length === 0) {
                 peersGrid.innerHTML = `<div class="col-span-1 sm:col-span-2 border border-neutral-900 p-4 text-center bg-[#070707] w-full"><p class="text-[10px] text-neutral-600 uppercase tracking-wider mono">WAITING FOR PEER DEVICES...</p></div>`;
@@ -106,8 +115,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            peersGrid.innerHTML = peerEntries.map(([ip, data]) => {
-                const isSelected = selectedPeerIp === ip;
+            peersGrid.innerHTML = peerEntries.map(([devId, data]) => {
+                const isSelected = selectedPeerIp === devId;
                 const isLiveNow = (Date.now() / 1000) - data.last_seen < 12;
                 const nodeLabel = `// ${escapeHTML(data.hostname).toUpperCase()}`;
                 const statusLabel = isLiveNow ? 'ONLINE' : 'OFFLINE';
@@ -115,7 +124,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const indicatorDot = isLiveNow ? `<span class="h-1 w-1 bg-emerald-400 rounded-full shadow-[0_0_8px_#10b981]"></span>` : `<span class="h-1 w-1 bg-amber-600 rounded-full"></span>`;
 
                 return `
-                    <div data-ip="${ip}" class="peer-card border ${isSelected ? 'border-white bg-neutral-900/40' : 'border-neutral-900 bg-[#070707]'} p-3 flex justify-between items-center rounded-none select-none cursor-pointer hover:border-neutral-500 transition duration-100">
+                    <div data-id="${devId}" class="peer-card border ${isSelected ? 'border-white bg-neutral-900/40' : 'border-neutral-900 bg-[#070707]'} p-3 flex justify-between items-center rounded-none select-none cursor-pointer hover:border-neutral-500 transition duration-100">
                         <span class="text-xs font-medium text-neutral-300 mono tracking-wider">${nodeLabel}</span>
                         <div class="flex items-center gap-2">
                             ${indicatorDot}
@@ -126,8 +135,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             document.querySelectorAll('.peer-card').forEach(card => {
                 card.addEventListener('click', () => {
-                    const targetIp = card.getAttribute('data-ip');
-                    selectedPeerIp = (selectedPeerIp === targetIp) ? null : targetIp;
+                    const targetId = card.getAttribute('data-id');
+                    selectedPeerIp = (selectedPeerIp === targetId) ? null : targetId;
                     queryLiveNetworkPeers();
                     showToast(selectedPeerIp ? `route locked: ${selectedPeerIp}` : 'route: local storage');
                 });
@@ -263,7 +272,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('/api/clipboard', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ content, slot: activeChannelSlot })
+                body: JSON.stringify({ content, slot: activeChannelSlot, device_id: sessionDeviceId })
             });
             if (response.ok) {
                 clipboardInput.value = '';
@@ -288,7 +297,7 @@ document.addEventListener('DOMContentLoaded', () => {
             fetch('/api/send_peer', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ "target_ip": selectedPeerIp, "file_path": file.name })
+                body: JSON.stringify({ "target_ip": selectedPeerIp, "target_device_id": selectedPeerIp, "file_path": file.name })
             })
             .then(res => res.json())
             .then(data => {
@@ -305,6 +314,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const formData = new FormData();
         formData.append('file', file);
+        formData.append('device_id', sessionDeviceId);
 
         progressContainer.classList.remove('hidden');
         statusText.textContent = "UPLOADING... [░░░░░░░░░░]";

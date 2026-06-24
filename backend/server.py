@@ -3,6 +3,7 @@ import socket
 import time
 import threading
 import random
+import uuid
 from flask import Flask, render_template, request, jsonify
 from werkzeug.utils import secure_filename
 
@@ -69,18 +70,31 @@ def register_device_ping():
         # SECURITY ENHANCEMENT: Sanitize the callsign to prevent header/UI manipulation strings
         assigned_hostname = "".join(c for c in str(assigned_hostname) if c.isalnum() or c in '-_')[:15]
         
+    device_id = data.get("device_id")
+    if device_id:
+        device_id = "".join(c for c in str(device_id) if c.isalnum() or c in '-_')[:50]
+        
+    if not device_id:
+        device_id = str(uuid.uuid4())
+        
     if not assigned_hostname:
-        if client_ip in HTTP_ACTIVE_DEVICES:
-            assigned_hostname = HTTP_ACTIVE_DEVICES[client_ip]["hostname"]
+        if device_id in HTTP_ACTIVE_DEVICES:
+            assigned_hostname = HTTP_ACTIVE_DEVICES[device_id]["hostname"]
         else:
             assigned_hostname = f"{random.choice(BRUTALIST_PREFIXES)}_{random.randint(100, 999)}"
     
     device_type = "Mobile Device" if "iphone" in user_agent or "android" in user_agent else "Web Workstation"
-    HTTP_ACTIVE_DEVICES[client_ip] = {"hostname": assigned_hostname, "type": device_type, "last_seen": time.time()}
+    HTTP_ACTIVE_DEVICES[device_id] = {
+        "hostname": assigned_hostname,
+        "type": device_type,
+        "last_seen": time.time(),
+        "ip": client_ip
+    }
     
     return jsonify({
         "status": "acknowledged", 
         "assigned_name": assigned_hostname,
+        "device_id": device_id,
         "active_nodes": [{"name": dev["hostname"], "type": dev["type"]} for dev in HTTP_ACTIVE_DEVICES.values() if time.time() - dev["last_seen"] < 12]
     })
 
@@ -88,11 +102,16 @@ def register_device_ping():
 def get_discovered_peers():
     now = time.time()
     unified_devices = {}
-    for ip, data in list(HTTP_ACTIVE_DEVICES.items()):
+    for dev_id, data in list(HTTP_ACTIVE_DEVICES.items()):
         if now - data["last_seen"] < 12:
-            unified_devices[ip] = {"hostname": data["hostname"], "type": data["type"], "last_seen": data["last_seen"]}
+            unified_devices[dev_id] = {
+                "hostname": data["hostname"],
+                "type": data["type"],
+                "last_seen": data["last_seen"],
+                "ip": data["ip"]
+            }
         else:
-            HTTP_ACTIVE_DEVICES.pop(ip, None)
+            HTTP_ACTIVE_DEVICES.pop(dev_id, None)
     return jsonify(unified_devices)
 
 @app.route('/api/clipboard', methods=['POST'])
@@ -106,9 +125,19 @@ def update_clipboard():
 
     # SECURITY ENHANCEMENT: Cap text data packets at 50,000 characters to block buffer overflow spam
     text_content = str(data['content'])[:50000]
-    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
-    sender_name = HTTP_ACTIVE_DEVICES.get(client_ip, {}).get('hostname', "EXTERNAL_NODE")
     
+    device_id = data.get('device_id')
+    sender_name = "EXTERNAL_NODE"
+    if device_id and device_id in HTTP_ACTIVE_DEVICES:
+        sender_name = HTTP_ACTIVE_DEVICES[device_id].get('hostname', "EXTERNAL_NODE")
+    else:
+        # Fallback to checking by IP
+        client_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
+        for dev in HTTP_ACTIVE_DEVICES.values():
+            if dev.get('ip') == client_ip:
+                sender_name = dev.get('hostname', "EXTERNAL_NODE")
+                break
+                
     WEB_CLIPBOARD_SLOTS[slot] = {"content": text_content, "sender": sender_name, "timestamp": time.time()}
     return jsonify({'status': 'success', 'message': f'Channel {slot} synchronized.'})
 
@@ -129,8 +158,19 @@ def upload_file():
         return jsonify({'error': 'Execution blocked: File extension type unauthorized.'}), 403
         
     if file:
-        client_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
-        sender_name = HTTP_ACTIVE_DEVICES.get(client_ip, {}).get('hostname', "NODE").replace(" ", "_").upper()
+        device_id = request.form.get('device_id')
+        sender_name = "NODE"
+        if device_id and device_id in HTTP_ACTIVE_DEVICES:
+            sender_name = HTTP_ACTIVE_DEVICES[device_id].get('hostname', "NODE")
+        else:
+            # Fallback to checking by IP
+            client_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
+            for dev in HTTP_ACTIVE_DEVICES.values():
+                if dev.get('ip') == client_ip:
+                    sender_name = dev.get('hostname', "NODE")
+                    break
+                    
+        sender_name = sender_name.replace(" ", "_").upper()
         
         # SECURITY ENHANCEMENT: Enforce path sanitation scrubbing to block traversal exploits
         raw_filename = secure_filename(file.filename)
