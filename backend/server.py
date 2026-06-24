@@ -4,6 +4,8 @@ import time
 import threading
 import random
 import uuid
+import urllib.request
+import json
 from flask import Flask, render_template, request, jsonify
 from werkzeug.utils import secure_filename
 
@@ -69,7 +71,7 @@ transfer_node.start_receiver_server()
 try:
     sync_observer = start_folder_sync_watcher(LOCAL_IP)
 except Exception as e:
-    print(f"⚠️ [Sync Watcher Warning] Failed to start folder watch: {e}")
+    print(f"[Sync Watcher Warning] Failed to start folder watch: {e}")
     sync_observer = None
 
 def run_storage_lifecycle_guard():
@@ -82,9 +84,9 @@ def run_storage_lifecycle_guard():
                     if os.path.isfile(file_path):
                         if (now - os.path.getmtime(file_path)) > 1800:
                             os.remove(file_path)
-                            print(f"🗑️ [Memory Guard] Auto-purged: {f}")
+                            print(f"[Memory Guard] Auto-purged: {f}")
         except Exception as e:
-            print(f"❌ [Guard Error]: {e}")
+            print(f"[Guard Error]: {e}")
         time.sleep(60)
 
 threading.Thread(target=run_storage_lifecycle_guard, daemon=True).start()
@@ -189,6 +191,31 @@ def update_clipboard():
                 break
                 
     WEB_CLIPBOARD_SLOTS[slot] = {"content": text_content, "sender": sender_name, "timestamp": time.time()}
+    
+    # Broadcast to other discovered servers on the mesh if this is a new local sync
+    is_forwarded = data.get('is_forwarded', False)
+    if not is_forwarded and discovery_node:
+        active_peers = discovery_node.get_active_peers()
+        
+        def broadcast_clipboard():
+            for peer_ip in active_peers.keys():
+                try:
+                    peer_url = f"http://{peer_ip}:5000/api/clipboard"
+                    req_data = json.dumps({
+                        "content": text_content,
+                        "slot": slot,
+                        "device_id": f"udp_{LOCAL_IP.replace('.', '_')}",
+                        "is_forwarded": True  # Prevent infinite echo looping
+                    }).encode('utf-8')
+                    req = urllib.request.Request(peer_url, data=req_data, method="POST")
+                    req.add_header('Content-Type', 'application/json')
+                    with urllib.request.urlopen(req, timeout=2) as response:
+                        pass
+                except Exception as e:
+                    print(f"[Sync Broadcast Warning] Failed to forward to peer {peer_ip}: {e}")
+                    
+        threading.Thread(target=broadcast_clipboard, daemon=True).start()
+        
     return jsonify({'status': 'success', 'message': f'Channel {slot} synchronized.'})
 
 @app.route('/api/clipboard/get', methods=['GET'])
